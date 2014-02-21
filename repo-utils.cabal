@@ -11,6 +11,6 @@ cabal-version:       >=1.8
 
 
 executable repo-snapshot
-  build-depends:       base ==4.6.*
+  build-depends:       base ==4.6.*, filepath, directory
   hs-source-dirs:      src
   main-is:             RepoSnapshot.hs
