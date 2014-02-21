@@ -1,0 +1,16 @@
+name:                repo-utils
+version:             0.1.0.0
+homepage:            https://github.com/aartamonau/repo-utils
+license:             GPL-3
+license-file:        LICENSE
+author:              Aliaksey Artamonau
+maintainer:          aliaksiej.artamonau@gmail.com
+category:            Utility
+build-type:          Simple
+cabal-version:       >=1.8
+
+
+executable repo-snapshot
+  build-depends:       base ==4.6.*
+  hs-source-dirs:      src
+  main-is:             RepoSnapshot.hs
