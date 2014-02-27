@@ -17,7 +17,7 @@ findRootDir = go =<< canonicalizePath =<< getCurrentDirectory
             else do
               let parentDir = takeDirectory dir
               when (parentDir == dir) $
-                error "Could not find .repo directory"
+                error "could not find .repo directory"
               go parentDir
 
 stateDirName :: FilePath
