@@ -11,6 +11,7 @@ import System.FilePath (combine, takeDirectory)
 
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 
+
 repoDirName :: FilePath
 repoDirName = ".repo"
 
@@ -48,6 +49,18 @@ withLock stateDir f = do
   where lockPath = combine stateDir "lock"
         extractLock = fromMaybe (error $ "could not acquire file lock at " ++ lockPath)
 
+data Project = Project { name :: String
+                       , path :: FilePath
+                       }
+             deriving Show
+
+readProjects :: FilePath -> IO [Project]
+readProjects rootDir = map toProject . lines <$> readFile projectsPath
+  where projectsPath = combine rootDir ".repo/project.list"
+        toProject name = Project { name = name
+                                 , path = (combine rootDir name)
+                                 }
+
 main :: IO ()
 main = do
   root <- findRootDir
@@ -56,5 +69,9 @@ main = do
   withLock state $ do
     putStrLn $ "root directory: " ++ root
     putStrLn $ "state directory: " ++ state
+    projects <- readProjects root
+
+    putStrLn "projects: "
+    mapM_ print projects
 
     threadDelay 10000000
