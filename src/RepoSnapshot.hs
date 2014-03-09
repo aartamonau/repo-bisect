@@ -1,8 +1,15 @@
+import Control.Applicative ((<$>))
+import Control.Concurrent (threadDelay)
+import Control.Exception (finally, evaluate)
 import Control.Monad (when, unless)
+
+import Data.Maybe (fromMaybe)
 
 import System.Directory (getCurrentDirectory, canonicalizePath,
                          doesDirectoryExist, doesFileExist, createDirectory)
 import System.FilePath (combine, takeDirectory)
+
+import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 
 repoDirName :: FilePath
 repoDirName = ".repo"
@@ -34,10 +41,20 @@ createStateDir root = do
   return stateDir
   where stateDir = combine root stateDirName
 
+withLock :: FilePath -> IO a -> IO a
+withLock stateDir f = do
+  lock <- evaluate =<< extractLock <$> tryLockFile lockPath Exclusive
+  f `finally` unlockFile lock
+  where lockPath = combine stateDir "lock"
+        extractLock = fromMaybe (error $ "could not acquire file lock at " ++ lockPath)
+
 main :: IO ()
 main = do
   root <- findRootDir
   state <- createStateDir root
 
-  putStrLn $ "root directory: " ++ root
-  putStrLn $ "state directory: " ++ state
+  withLock state $ do
+    putStrLn $ "root directory: " ++ root
+    putStrLn $ "state directory: " ++ state
+
+    threadDelay 10000000
