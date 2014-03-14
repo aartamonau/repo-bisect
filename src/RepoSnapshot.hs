@@ -1,7 +1,10 @@
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 import Control.Applicative ((<$>))
 import Control.Concurrent (threadDelay)
 import Control.Exception (finally, evaluate)
-import Control.Monad (when, unless)
+import Control.Monad (forM_, when, unless)
 
 import Data.Maybe (fromMaybe)
 
@@ -11,6 +14,8 @@ import System.FilePath (combine, takeDirectory)
 
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 
+import Git (withRepository, resolveReference)
+import Git.Libgit2 (OidPtr, lgFactory)
 
 repoDirName :: FilePath
 repoDirName = ".repo"
@@ -61,6 +66,12 @@ readProjects rootDir = map toProject . lines <$> readFile projectsPath
                                  , path = (combine rootDir name)
                                  }
 
+readProjectHead :: Project -> IO OidPtr
+readProjectHead Project {path} =
+  withRepository lgFactory path $ do
+    ref <- resolveReference "HEAD"
+    return $ fromMaybe (error $ "could not read HEAD of " ++ path) ref
+
 main :: IO ()
 main = do
   root <- findRootDir
@@ -72,6 +83,8 @@ main = do
     projects <- readProjects root
 
     putStrLn "projects: "
-    mapM_ print projects
+    forM_ projects $ \p@(Project {name, path}) -> do
+      head <- readProjectHead p
+      putStrLn $ name ++ ": " ++ path ++ " => " ++ show head
 
     threadDelay 10000000
