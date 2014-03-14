@@ -5,7 +5,9 @@ import Control.Applicative ((<$>))
 import Control.Concurrent (threadDelay)
 import Control.Exception (finally, evaluate)
 import Control.Monad (forM_, when, unless)
+import Control.Monad.IO.Class (liftIO)
 
+import Data.Default (def)
 import Data.Maybe (fromMaybe)
 
 import System.Directory (getCurrentDirectory, canonicalizePath,
@@ -16,6 +18,13 @@ import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 
 import Git (withRepository, resolveReference)
 import Git.Libgit2 (OidPtr, lgFactory)
+
+import UI.Command (Application(appName, appVersion, appAuthors, appProject,
+                               appCmds, appShortDesc, appLongDesc,
+                               appCategories, appBugEmail),
+                   Command(cmdName, cmdHandler, cmdShortDesc, cmdCategory),
+
+                   appMain, defCmd)
 
 repoDirName :: FilePath
 repoDirName = ".repo"
@@ -72,8 +81,27 @@ readProjectHead Project {path} =
     ref <- resolveReference "HEAD"
     return $ fromMaybe (error $ "could not read HEAD of " ++ path) ref
 
-main :: IO ()
-main = do
+app :: Application () ()
+app = def { appName = "repo-snapshot"
+          , appVersion = "0.1"
+          , appAuthors = ["Aliaksey Artamonau <aliaksiej.artamonau@gmail.com>"]
+          , appShortDesc = "short description"
+          , appLongDesc = "long description"
+          , appProject = "repo-utils"
+          , appCategories = ["foo"]
+          , appCmds = [foo]
+          , appBugEmail = "aliaksiej.artamonau@gmail.com"
+          }
+
+foo :: Command ()
+foo = defCmd { cmdName = "foo"
+             , cmdHandler = liftIO $ fooHandler
+             , cmdShortDesc = "foo short desc"
+             , cmdCategory = "foo"
+             }
+
+fooHandler :: IO ()
+fooHandler = do
   root <- findRootDir
   state <- createStateDir root
 
@@ -88,3 +116,7 @@ main = do
       putStrLn $ name ++ ": " ++ path ++ " => " ++ show head
 
     threadDelay 10000000
+
+
+main :: IO ()
+main = appMain app
