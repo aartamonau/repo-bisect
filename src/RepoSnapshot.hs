@@ -24,7 +24,7 @@ import System.FilePath (combine, takeDirectory)
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 
 import Git (MonadGit, RefTarget(RefObj, RefSymbolic),
-            withRepository, lookupReference)
+            withRepository, lookupReference, renderOid)
 import Git.Libgit2 (LgRepo, lgFactory)
 
 import Shelly (cd, run_, shelly, silently)
@@ -94,7 +94,7 @@ readProjectHead Project {path} =
 type ShellRef = Text
 
 shellRef :: RefTarget LgRepo -> ShellRef
-shellRef (RefObj obj) = Text.pack $ show obj
+shellRef (RefObj obj) = renderOid obj
 shellRef (RefSymbolic sym) = decodeBranch sym
   where decodeBranch s | Just branch <- Text.stripPrefix "refs/heads/" s = branch
                        | otherwise = s
