@@ -5,10 +5,11 @@
 import Control.Applicative ((<$>))
 import Control.Concurrent (threadDelay)
 import Control.Exception (finally, evaluate)
-import Control.Monad (forM_, when, unless)
+import Control.Monad (forM, forM_, when, unless)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 
 import Data.Default (def)
+import Data.List (find)
 import Data.Maybe (fromMaybe)
 
 import Data.Text (Text)
@@ -108,6 +109,23 @@ saveHeads stateDir projects = do
   where headsLine (Project {name}) head =
           Text.concat [shellRef head, " ", name, "\n"]
 
+readHeads :: FilePath -> [Project] -> IO [(Project, ShellRef)]
+readHeads stateDir projects = do
+  content <- Text.readFile (headsPath stateDir)
+
+  forM (map decodeLine $ Text.lines content) $ \(ref, name) ->
+    return (findProject name, ref)
+
+  where decodeLine s
+          | (ref, rest) <- Text.breakOn " " s = (ref, Text.tail rest)
+          | otherwise =
+            error $ "got invalid line in HEADS file: " ++ Text.unpack s
+
+        findProject needle
+          | Just proj <- find p projects = proj
+          | otherwise =
+            error $ "got invalid project name in HEADS: " ++ Text.unpack needle
+          where p proj = name proj == needle
 app :: Application () ()
 app = def { appName = "repo-snapshot"
           , appVersion = "0.1"
@@ -138,12 +156,12 @@ fooHandler = do
     projects <- readProjects rootDir
 
     saveHeads stateDir projects
+    heads <- readHeads stateDir projects
 
     putStrLn "projects: "
-    forM_ projects $ \p@(Project {name, path}) -> do
-      head <- readProjectHead p
+    forM_ heads $ \((Project {name, path}), head) -> do
       putStrLn $ Text.unpack name ++ ": " ++
-        path ++ " => " ++ Text.unpack (shellRef head)
+        path ++ " => " ++ Text.unpack head
 
     threadDelay 10000000
 
