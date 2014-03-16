@@ -82,7 +82,7 @@ readProjects :: FilePath -> IO [Project]
 readProjects rootDir = map toProject . lines <$> readFile projectsPath
   where projectsPath = combine rootDir ".repo/project.list"
         toProject name = Project { name = Text.pack name
-                                 , path = (combine rootDir name)
+                                 , path = combine rootDir name
                                  }
 
 readProjectHead :: Project -> IO (RefTarget LgRepo)
