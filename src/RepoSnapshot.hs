@@ -95,12 +95,15 @@ shellRef (RefSymbolic sym) = decodeBranch sym
   where decodeBranch s | Just branch <- Text.stripPrefix "refs/heads/" s = branch
                        | otherwise = s
 
+headsPath :: FilePath -> FilePath
+headsPath stateDir = combine stateDir "HEADS"
+
 saveHeads :: FilePath -> [Project] -> IO ()
 saveHeads stateDir projects = do
   heads <- mapM readProjectHead projects
   let content = Text.concat $ zipWith headsLine projects heads
 
-  Text.writeFile (combine stateDir "HEADS") content
+  Text.writeFile (headsPath stateDir) content
 
   where headsLine (Project {name}) head =
           Text.concat [shellRef head, " ", name, "\n"]
