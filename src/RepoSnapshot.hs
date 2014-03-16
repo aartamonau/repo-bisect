@@ -68,7 +68,7 @@ withLock stateDir f = do
   where lockPath = combine stateDir "lock"
         extractLock = fromMaybe (error $ "could not acquire file lock at " ++ lockPath)
 
-data Project = Project { name :: String
+data Project = Project { name :: Text
                        , path :: FilePath
                        }
              deriving Show
@@ -76,7 +76,7 @@ data Project = Project { name :: String
 readProjects :: FilePath -> IO [Project]
 readProjects rootDir = map toProject . lines <$> readFile projectsPath
   where projectsPath = combine rootDir ".repo/project.list"
-        toProject name = Project { name = name
+        toProject name = Project { name = Text.pack name
                                  , path = (combine rootDir name)
                                  }
 
@@ -126,7 +126,8 @@ fooHandler = do
     putStrLn "projects: "
     forM_ projects $ \p@(Project {name, path}) -> do
       head <- readProjectHead p
-      putStrLn $ name ++ ": " ++ path ++ " => " ++ Text.unpack (shellRef head)
+      putStrLn $ Text.unpack name ++ ": " ++
+        path ++ " => " ++ Text.unpack (shellRef head)
 
     threadDelay 10000000
 
