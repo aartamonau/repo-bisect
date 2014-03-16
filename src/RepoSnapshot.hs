@@ -13,6 +13,7 @@ import Data.Maybe (fromMaybe)
 
 import Data.Text (Text)
 import qualified Data.Text as Text
+import qualified Data.Text.IO as Text
 
 import System.Directory (getCurrentDirectory, canonicalizePath,
                          doesDirectoryExist, doesFileExist, createDirectory)
@@ -94,6 +95,16 @@ shellRef (RefSymbolic sym) = decodeBranch sym
   where decodeBranch s | Just branch <- Text.stripPrefix "refs/heads/" s = branch
                        | otherwise = s
 
+saveHeads :: FilePath -> [Project] -> IO ()
+saveHeads stateDir projects = do
+  heads <- mapM readProjectHead projects
+  let content = Text.concat $ zipWith headsLine projects heads
+
+  Text.writeFile (combine stateDir "HEADS") content
+
+  where headsLine (Project {name}) head =
+          Text.concat [shellRef head, " ", name, "\n"]
+
 app :: Application () ()
 app = def { appName = "repo-snapshot"
           , appVersion = "0.1"
@@ -116,12 +127,14 @@ foo = defCmd { cmdName = "foo"
 fooHandler :: IO ()
 fooHandler = do
   rootDir <- findRootDir
-  state <- createStateDir rootDir
+  stateDir <- createStateDir rootDir
 
-  withLock state $ do
+  withLock stateDir $ do
     putStrLn $ "root directory: " ++ rootDir
-    putStrLn $ "state directory: " ++ state
+    putStrLn $ "state directory: " ++ stateDir
     projects <- readProjects rootDir
+
+    saveHeads stateDir projects
 
     putStrLn "projects: "
     forM_ projects $ \p@(Project {name, path}) -> do
