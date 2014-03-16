@@ -1,14 +1,18 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternGuards #-}
 
 import Control.Applicative ((<$>))
 import Control.Concurrent (threadDelay)
 import Control.Exception (finally, evaluate)
 import Control.Monad (forM_, when, unless)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 
 import Data.Default (def)
 import Data.Maybe (fromMaybe)
+
+import Data.Text (Text)
+import qualified Data.Text as Text
 
 import System.Directory (getCurrentDirectory, canonicalizePath,
                          doesDirectoryExist, doesFileExist, createDirectory)
@@ -16,8 +20,9 @@ import System.FilePath (combine, takeDirectory)
 
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 
-import Git (withRepository, resolveReference)
-import Git.Libgit2 (OidPtr, lgFactory)
+import Git (MonadGit, RefTarget(RefObj, RefSymbolic),
+            withRepository, lookupReference)
+import Git.Libgit2 (LgRepo, lgFactory)
 
 import UI.Command (Application(appName, appVersion, appAuthors, appProject,
                                appCmds, appShortDesc, appLongDesc,
@@ -75,11 +80,19 @@ readProjects rootDir = map toProject . lines <$> readFile projectsPath
                                  , path = (combine rootDir name)
                                  }
 
-readProjectHead :: Project -> IO OidPtr
+readProjectHead :: Project -> IO (RefTarget LgRepo)
 readProjectHead Project {path} =
   withRepository lgFactory path $ do
-    ref <- resolveReference "HEAD"
-    return $ fromMaybe (error $ "could not read HEAD of " ++ path) ref
+    ref <- lookupReference "HEAD"
+    return $ fromMaybe (error $ "could not resolve HEAD of " ++ path) ref
+
+type ShellRef = Text
+
+shellRef :: RefTarget LgRepo -> ShellRef
+shellRef (RefObj obj) = Text.pack $ show obj
+shellRef (RefSymbolic sym) = decodeBranch sym
+  where decodeBranch s | Just branch <- Text.stripPrefix "refs/heads/" s = branch
+                       | otherwise = s
 
 app :: Application () ()
 app = def { appName = "repo-snapshot"
@@ -113,7 +126,7 @@ fooHandler = do
     putStrLn "projects: "
     forM_ projects $ \p@(Project {name, path}) -> do
       head <- readProjectHead p
-      putStrLn $ name ++ ": " ++ path ++ " => " ++ show head
+      putStrLn $ name ++ ": " ++ path ++ " => " ++ Text.unpack (shellRef head)
 
     threadDelay 10000000
 
