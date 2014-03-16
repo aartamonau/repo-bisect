@@ -13,7 +13,7 @@ cabal-version:       >=1.8
 executable repo-snapshot
   build-depends:       base ==4.6.*, filepath, directory, filelock,
                        gitlib, gitlib-libgit2, data-default, ui-command,
-                       transformers, text
+                       transformers, text, shelly
   hs-source-dirs:      src
   ghc-options:         -Wall -fno-warn-name-shadowing
   main-is:             RepoSnapshot.hs

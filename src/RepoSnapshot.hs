@@ -11,6 +11,7 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Default (def)
 import Data.List (find)
 import Data.Maybe (fromMaybe)
+import Data.String (fromString)
 
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -25,6 +26,8 @@ import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 import Git (MonadGit, RefTarget(RefObj, RefSymbolic),
             withRepository, lookupReference)
 import Git.Libgit2 (LgRepo, lgFactory)
+
+import Shelly (cd, run_, shelly, silently)
 
 import UI.Command (Application(appName, appVersion, appAuthors, appProject,
                                appCmds, appShortDesc, appLongDesc,
@@ -126,6 +129,13 @@ readHeads stateDir projects = do
           | otherwise =
             error $ "got invalid project name in HEADS: " ++ Text.unpack needle
           where p proj = name proj == needle
+
+checkout :: Project -> ShellRef -> IO ()
+checkout (Project {path}) ref =
+  shelly $ silently $ do
+    cd $ fromString path
+    run_ "git" ["checkout", ref]
+
 app :: Application () ()
 app = def { appName = "repo-snapshot"
           , appVersion = "0.1"
@@ -159,9 +169,11 @@ fooHandler = do
     heads <- readHeads stateDir projects
 
     putStrLn "projects: "
-    forM_ heads $ \((Project {name, path}), head) -> do
+    forM_ heads $ \(p@(Project {name, path}), head) -> do
       putStrLn $ Text.unpack name ++ ": " ++
         path ++ " => " ++ Text.unpack head
+
+      checkout p head
 
     threadDelay 10000000
 
