@@ -51,7 +51,7 @@ stateDirName :: FilePath
 stateDirName = ".repo-utils"
 
 createStateDir :: FilePath -> IO FilePath
-createStateDir root = do
+createStateDir rootDir = do
   exists <- doesDirectoryExist stateDir
   unless exists $ do
     fileExists <- doesFileExist stateDir
@@ -59,7 +59,7 @@ createStateDir root = do
       error $ "failed to create state directory (" ++ stateDir ++ "): file exists"
     createDirectory stateDir
   return stateDir
-  where stateDir = combine root stateDirName
+  where stateDir = combine rootDir stateDirName
 
 withLock :: FilePath -> IO a -> IO a
 withLock stateDir f = do
@@ -115,13 +115,13 @@ foo = defCmd { cmdName = "foo"
 
 fooHandler :: IO ()
 fooHandler = do
-  root <- findRootDir
-  state <- createStateDir root
+  rootDir <- findRootDir
+  state <- createStateDir rootDir
 
   withLock state $ do
-    putStrLn $ "root directory: " ++ root
+    putStrLn $ "root directory: " ++ rootDir
     putStrLn $ "state directory: " ++ state
-    projects <- readProjects root
+    projects <- readProjects rootDir
 
     putStrLn "projects: "
     forM_ projects $ \p@(Project {name, path}) -> do
