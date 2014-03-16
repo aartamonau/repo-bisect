@@ -10,8 +10,9 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 
 import Data.Default (def)
 import Data.List (find)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, fromJust)
 import Data.String (fromString)
+import Data.Tagged (Tagged(Tagged))
 
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -23,8 +24,10 @@ import System.FilePath (combine, takeDirectory)
 
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 
-import Git (MonadGit, RefTarget(RefObj, RefSymbolic),
-            withRepository, lookupReference, renderOid)
+import Git (MonadGit(lookupCommit),
+            Commit(commitParents, commitOid),
+            RefTarget(RefObj, RefSymbolic), Oid, CommitOid,
+            withRepository, lookupReference, renderOid, referenceToOid)
 import Git.Libgit2 (LgRepo, lgFactory)
 
 import Shelly (cd, run_, shelly, silently)
@@ -134,6 +137,31 @@ checkout (Project {path}) ref =
     cd $ fromString path
     run_ "git" ["checkout", ref]
 
+oidToCommitOid :: Oid r -> CommitOid r
+oidToCommitOid = Tagged
+
+findCommit :: Project -> RefTarget LgRepo -> (Commit LgRepo -> Bool)
+           -> IO (Maybe (Commit LgRepo))
+findCommit Project{path} head p =
+  withRepository lgFactory path $ do
+    headCommitOid <- oidToCommitOid <$> resolve head
+    go headCommitOid
+
+  where resolve ref = do
+          maybeOid <- referenceToOid ref
+          return $
+            fromMaybe (error $ "could not resolve "
+                       ++ Text.unpack (renderRef ref) ++ " at " ++ path) maybeOid
+
+        go cid = do
+          commit <- lookupCommit cid
+          if p commit
+            then return $ Just commit
+            else
+              case commitParents commit of
+                [] -> return Nothing
+                (first : _) -> go first
+
 app :: Application () ()
 app = def { appName = "repo-snapshot"
           , appVersion = "0.1"
@@ -170,6 +198,12 @@ fooHandler = do
     forM_ heads $ \(p@(Project {name, path}), head) -> do
       putStrLn $ Text.unpack name ++ ": " ++
         path ++ " => " ++ Text.unpack head
+
+      headRef <- readProjectHead p
+      initial <- fromJust <$> findCommit p headRef (null . commitParents)
+
+      putStrLn $ "initial commit => " ++ show (commitOid initial)
+      putStrLn ""
 
       checkout p head
 
