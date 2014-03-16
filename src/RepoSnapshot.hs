@@ -91,11 +91,9 @@ readProjectHead Project {path} =
     ref <- lookupReference "HEAD"
     return $ fromMaybe (error $ "could not resolve HEAD of " ++ path) ref
 
-type ShellRef = Text
-
-shellRef :: RefTarget LgRepo -> ShellRef
-shellRef (RefObj obj) = renderOid obj
-shellRef (RefSymbolic sym) = decodeBranch sym
+renderRef :: RefTarget LgRepo -> Text
+renderRef (RefObj obj) = renderOid obj
+renderRef (RefSymbolic sym) = decodeBranch sym
   where decodeBranch s | Just branch <- Text.stripPrefix "refs/heads/" s = branch
                        | otherwise = s
 
@@ -110,9 +108,9 @@ saveHeads stateDir projects = do
   Text.writeFile (headsPath stateDir) content
 
   where headsLine (Project {name}) head =
-          Text.concat [shellRef head, " ", name, "\n"]
+          Text.concat [renderRef head, " ", name, "\n"]
 
-readHeads :: FilePath -> [Project] -> IO [(Project, ShellRef)]
+readHeads :: FilePath -> [Project] -> IO [(Project, Text)]
 readHeads stateDir projects = do
   content <- Text.readFile (headsPath stateDir)
 
@@ -130,7 +128,7 @@ readHeads stateDir projects = do
             error $ "got invalid project name in HEADS: " ++ Text.unpack needle
           where p proj = name proj == needle
 
-checkout :: Project -> ShellRef -> IO ()
+checkout :: Project -> Text -> IO ()
 checkout (Project {path}) ref =
   shelly $ silently $ do
     cd $ fromString path
