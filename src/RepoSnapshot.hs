@@ -18,6 +18,9 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 
+import Data.Time (UTCTime, zonedTimeToUTC)
+import Data.Time.Git (io_approxidate, posixToUTC)
+
 import System.Directory (getCurrentDirectory, canonicalizePath,
                          doesDirectoryExist, doesFileExist, createDirectory)
 import System.FilePath (combine, takeDirectory)
@@ -25,7 +28,8 @@ import System.FilePath (combine, takeDirectory)
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 
 import Git (MonadGit(lookupCommit),
-            Commit(commitParents, commitOid),
+            Commit(commitParents, commitOid, commitCommitter),
+            Signature(signatureWhen),
             RefTarget(RefObj, RefSymbolic), Oid, CommitOid,
             withRepository, lookupReference, renderOid, referenceToOid)
 import Git.Libgit2 (LgRepo, lgFactory)
@@ -162,6 +166,12 @@ findCommit Project{path} head p =
                 [] -> return Nothing
                 (first : _) -> go first
 
+findCommitByDate :: Project -> RefTarget LgRepo -> UTCTime
+                 -> IO (Maybe (Commit LgRepo))
+findCommitByDate proj head date = findCommit proj head p
+  where p commit = zonedTimeToUTC (signatureWhen committer) <= date
+          where committer = commitCommitter commit
+
 app :: Application () ()
 app = def { appName = "repo-snapshot"
           , appVersion = "0.1"
@@ -186,6 +196,8 @@ fooHandler = do
   rootDir <- findRootDir
   stateDir <- createStateDir rootDir
 
+  yearAgo <- posixToUTC . fromJust <$> io_approxidate "one year ago"
+
   withLock stateDir $ do
     putStrLn $ "root directory: " ++ rootDir
     putStrLn $ "state directory: " ++ stateDir
@@ -200,9 +212,10 @@ fooHandler = do
         path ++ " => " ++ Text.unpack head
 
       headRef <- readProjectHead p
-      initial <- fromJust <$> findCommit p headRef (null . commitParents)
 
-      putStrLn $ "initial commit => " ++ show (commitOid initial)
+      maybeCommitOid <- (fmap commitOid) <$> findCommitByDate p headRef yearAgo
+
+      putStrLn $ "year ago commit => " ++ show maybeCommitOid
       putStrLn ""
 
       checkout p head
