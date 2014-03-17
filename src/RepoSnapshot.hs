@@ -40,7 +40,6 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
                                appCmds, appShortDesc, appLongDesc,
                                appCategories, appBugEmail),
                    Command(cmdName, cmdHandler, cmdShortDesc, cmdCategory),
-
                    appMain, defCmd)
 
 repoDirName :: FilePath
