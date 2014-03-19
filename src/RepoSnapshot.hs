@@ -106,33 +106,38 @@ renderRef (RefSymbolic sym) = decodeBranch sym
 headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
 
-saveHeads :: FilePath -> [Project] -> IO ()
-saveHeads stateDir projects = do
-  heads <- mapM readProjectHead projects
-  let content = Text.concat $ zipWith headsLine projects heads
+saveSnapshot :: FilePath -> [(Project, RefTarget LgRepo)] -> IO ()
+saveSnapshot path projects =
+  Text.writeFile path $ Text.concat (map oneLine projects)
 
-  Text.writeFile (headsPath stateDir) content
+  where oneLine (Project {name}, ref) =
+          Text.concat [renderRef ref, " ", name, "\n"]
 
-  where headsLine (Project {name}) head =
-          Text.concat [renderRef head, " ", name, "\n"]
-
-readHeads :: FilePath -> [Project] -> IO [(Project, Text)]
-readHeads stateDir projects = do
-  content <- Text.readFile (headsPath stateDir)
+readSnapshot :: FilePath -> [Project] -> IO [(Project, Text)]
+readSnapshot path projects = do
+  content <- Text.readFile path
 
   forM (map decodeLine $ Text.lines content) $ \(ref, name) ->
     return (findProject name, ref)
 
   where decodeLine s
           | (ref, rest) <- Text.breakOn " " s = (ref, Text.tail rest)
-          | otherwise =
-            error $ "got invalid line in HEADS file: " ++ Text.unpack s
+          | otherwise = error $ "got invalid line in snapshot file "
+                                  ++ path ++ " : " ++ Text.unpack s
 
         findProject needle
           | Just proj <- find p projects = proj
-          | otherwise =
-            error $ "got invalid project name in HEADS: " ++ Text.unpack needle
+          | otherwise = error $ "got invalid project name in snapshot file "
+                                  ++ path ++ " : " ++ Text.unpack needle
           where p proj = name proj == needle
+
+saveHeads :: FilePath -> [Project] -> IO ()
+saveHeads stateDir projects = do
+  heads <- mapM readProjectHead projects
+  saveSnapshot (headsPath stateDir) (zip projects heads)
+
+readHeads :: FilePath -> [Project] -> IO [(Project, Text)]
+readHeads stateDir projects = readSnapshot (headsPath stateDir) projects
 
 checkout :: Project -> Text -> IO ()
 checkout (Project {path}) ref =
