@@ -99,9 +99,7 @@ readProjectHead Project {path} =
 
 renderRef :: RefTarget LgRepo -> Text
 renderRef (RefObj obj) = renderOid obj
-renderRef (RefSymbolic sym) = decodeBranch sym
-  where decodeBranch s | Just branch <- Text.stripPrefix "refs/heads/" s = branch
-                       | otherwise = s
+renderRef (RefSymbolic sym) = sym
 
 headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
@@ -143,7 +141,10 @@ checkout :: Project -> Text -> IO ()
 checkout (Project {path}) ref =
   shelly $ silently $ do
     cd $ fromString path
-    run_ "git" ["checkout", ref]
+    run_ "git" ["checkout", branchify ref]
+
+  where branchify s | Just branch <- Text.stripPrefix "refs/heads/" s = branch
+                    | otherwise = s
 
 oidToCommitOid :: Oid r -> CommitOid r
 oidToCommitOid = Tagged
