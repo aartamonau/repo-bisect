@@ -95,6 +95,10 @@ data Project = Project { name :: Text
                        }
              deriving Show
 
+withProject :: (FactoryContraints n r, ?factory :: RepoFactory n r)
+            => Project -> n a -> IO a
+withProject proj = withRepository ?factory (path proj)
+
 readProjects :: FilePath -> IO [Project]
 readProjects rootDir = map toProject . lines <$> readFile projectsPath
   where projectsPath = combine rootDir ".repo/project.list"
@@ -104,10 +108,10 @@ readProjects rootDir = map toProject . lines <$> readFile projectsPath
 
 readProjectHead :: (FactoryContraints n r, ?factory :: RepoFactory n r)
                 => Project -> IO (RefTarget r)
-readProjectHead Project {path} =
-  withRepository ?factory path $ do
+readProjectHead proj =
+  withProject proj $ do
     ref <- lookupReference "HEAD"
-    return $ fromMaybe (error $ "could not resolve HEAD of " ++ path) ref
+    return $ fromMaybe (error $ "could not resolve HEAD of " ++ path proj) ref
 
 renderRef :: (IsOid (Oid r)) => RefTarget r -> Text
 renderRef (RefObj obj) = renderOid obj
@@ -164,8 +168,8 @@ oidToCommitOid = Tagged
 
 findCommit :: (FactoryContraints n r, ?factory :: RepoFactory n r) =>
               Project -> RefTarget r -> (Commit r -> Bool) -> IO (Maybe (Commit r))
-findCommit Project{path} head p =
-  withRepository ?factory path $ do
+findCommit proj head p =
+  withProject proj $ do
     headCommitOid <- oidToCommitOid <$> resolve head
     go headCommitOid
 
@@ -173,7 +177,7 @@ findCommit Project{path} head p =
           maybeOid <- referenceToOid ref
           return $
             fromMaybe (error $ "could not resolve "
-                       ++ Text.unpack (renderRef ref) ++ " at " ++ path) maybeOid
+                       ++ Text.unpack (renderRef ref) ++ " at " ++ path proj) maybeOid
 
         go cid = do
           commit <- lookupCommit cid
