@@ -48,7 +48,7 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
 
 import Control.Monad.Trans.Control (MonadBaseControl)
 
-type FactoryContraints n r =
+type FactoryConstraints n r =
   (MonadGit r n, MonadBaseControl IO n, IsOid (Oid r))
 
 type RepoFactory n r = RepositoryFactory n IO r
@@ -95,7 +95,7 @@ data Project = Project { name :: Text
                        }
              deriving Show
 
-withProject :: (FactoryContraints n r, ?factory :: RepoFactory n r)
+withProject :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
             => Project -> n a -> IO a
 withProject proj = withRepository ?factory (path proj)
 
@@ -106,7 +106,7 @@ readProjects rootDir = map toProject . lines <$> readFile projectsPath
                                  , path = combine rootDir name
                                  }
 
-readProjectHead :: (FactoryContraints n r, ?factory :: RepoFactory n r)
+readProjectHead :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
                 => Project -> IO (RefTarget r)
 readProjectHead proj =
   withProject proj $ do
@@ -145,7 +145,7 @@ readSnapshot path projects = do
                                   ++ path ++ " : " ++ Text.unpack needle
           where p proj = name proj == needle
 
-saveHeads :: (FactoryContraints n r, ?factory :: RepoFactory n r)
+saveHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
           => FilePath -> [Project] -> IO ()
 saveHeads stateDir projects = do
   heads <- liftIO $ mapM readProjectHead projects
@@ -166,7 +166,7 @@ checkout (Project {path}) ref =
 oidToCommitOid :: Oid r -> CommitOid r
 oidToCommitOid = Tagged
 
-findCommit :: (FactoryContraints n r, ?factory :: RepoFactory n r) =>
+findCommit :: (FactoryConstraints n r, ?factory :: RepoFactory n r) =>
               Project -> RefTarget r -> (Commit r -> Bool) -> IO (Maybe (Commit r))
 findCommit proj head p =
   withProject proj $ do
@@ -188,14 +188,14 @@ findCommit proj head p =
                 [] -> return Nothing
                 (first : _) -> go first
 
-findCommitByDate :: (FactoryContraints n r, ?factory :: RepoFactory n r)
+findCommitByDate :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
                  => Project -> RefTarget r -> UTCTime
                  -> IO (Maybe (Commit r))
 findCommitByDate proj head date = findCommit proj head p
   where p commit = zonedTimeToUTC (signatureWhen committer) <= date
           where committer = commitCommitter commit
 
-app :: (FactoryContraints n r, ?factory :: RepoFactory n r)
+app :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
     => Application () ()
 app = def { appName = "repo-snapshot"
           , appVersion = "0.1"
@@ -208,7 +208,7 @@ app = def { appName = "repo-snapshot"
           , appBugEmail = "aliaksiej.artamonau@gmail.com"
           }
 
-foo :: (FactoryContraints n r, ?factory :: RepoFactory n r)
+foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
     => Command ()
 foo = defCmd { cmdName = "foo"
              , cmdHandler = liftIO $ fooHandler
@@ -216,7 +216,7 @@ foo = defCmd { cmdName = "foo"
              , cmdCategory = "foo"
              }
 
-fooHandler :: (FactoryContraints n r, ?factory :: RepoFactory n r)
+fooHandler :: forall n r . (FactoryConstraints n r, ?factory :: RepoFactory n r)
            => IO ()
 fooHandler = do
   rootDir <- findRootDir
