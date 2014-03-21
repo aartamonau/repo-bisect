@@ -1,6 +1,9 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE ImplicitParams #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
 import Control.Applicative ((<$>))
 import Control.Concurrent (threadDelay)
@@ -31,8 +34,9 @@ import Git (MonadGit(lookupCommit),
             Commit(commitParents, commitOid, commitCommitter),
             Signature(signatureWhen),
             RefTarget(RefObj, RefSymbolic), Oid, CommitOid,
+            RepositoryFactory, IsOid,
             withRepository, lookupReference, renderOid, referenceToOid)
-import Git.Libgit2 (LgRepo, lgFactory)
+import Git.Libgit2 (lgFactory)
 
 import Shelly (cd, run_, shelly, silently)
 
@@ -41,6 +45,11 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
                                appCategories, appBugEmail),
                    Command(cmdName, cmdHandler, cmdShortDesc, cmdCategory),
                    appMain, defCmd)
+
+import Control.Monad.Trans.Control (MonadBaseControl)
+
+type FactoryContraints n r =
+  (MonadGit r n, MonadBaseControl IO n, IsOid (Oid r))
 
 repoDirName :: FilePath
 repoDirName = ".repo"
@@ -91,20 +100,21 @@ readProjects rootDir = map toProject . lines <$> readFile projectsPath
                                  , path = combine rootDir name
                                  }
 
-readProjectHead :: Project -> IO (RefTarget LgRepo)
+readProjectHead :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r)
+                => Project -> IO (RefTarget r)
 readProjectHead Project {path} =
-  withRepository lgFactory path $ do
+  withRepository ?factory path $ do
     ref <- lookupReference "HEAD"
     return $ fromMaybe (error $ "could not resolve HEAD of " ++ path) ref
 
-renderRef :: RefTarget LgRepo -> Text
+renderRef :: (IsOid (Oid r)) => RefTarget r -> Text
 renderRef (RefObj obj) = renderOid obj
 renderRef (RefSymbolic sym) = sym
 
 headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
 
-saveSnapshot :: FilePath -> [(Project, RefTarget LgRepo)] -> IO ()
+saveSnapshot :: IsOid (Oid r) => FilePath -> [(Project, RefTarget r)] -> IO ()
 saveSnapshot path projects =
   Text.writeFile path $ Text.concat (map oneLine projects)
 
@@ -129,9 +139,10 @@ readSnapshot path projects = do
                                   ++ path ++ " : " ++ Text.unpack needle
           where p proj = name proj == needle
 
-saveHeads :: FilePath -> [Project] -> IO ()
+saveHeads :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r)
+          => FilePath -> [Project] -> IO ()
 saveHeads stateDir projects = do
-  heads <- mapM readProjectHead projects
+  heads <- liftIO $ mapM readProjectHead projects
   saveSnapshot (headsPath stateDir) (zip projects heads)
 
 readHeads :: FilePath -> [Project] -> IO [(Project, Text)]
@@ -149,10 +160,10 @@ checkout (Project {path}) ref =
 oidToCommitOid :: Oid r -> CommitOid r
 oidToCommitOid = Tagged
 
-findCommit :: Project -> RefTarget LgRepo -> (Commit LgRepo -> Bool)
-           -> IO (Maybe (Commit LgRepo))
+findCommit :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r) =>
+              Project -> RefTarget r -> (Commit r -> Bool) -> IO (Maybe (Commit r))
 findCommit Project{path} head p =
-  withRepository lgFactory path $ do
+  withRepository ?factory path $ do
     headCommitOid <- oidToCommitOid <$> resolve head
     go headCommitOid
 
@@ -171,13 +182,15 @@ findCommit Project{path} head p =
                 [] -> return Nothing
                 (first : _) -> go first
 
-findCommitByDate :: Project -> RefTarget LgRepo -> UTCTime
-                 -> IO (Maybe (Commit LgRepo))
+findCommitByDate :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r)
+                 => Project -> RefTarget r -> UTCTime
+                 -> IO (Maybe (Commit r))
 findCommitByDate proj head date = findCommit proj head p
   where p commit = zonedTimeToUTC (signatureWhen committer) <= date
           where committer = commitCommitter commit
 
-app :: Application () ()
+app :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r)
+    => Application () ()
 app = def { appName = "repo-snapshot"
           , appVersion = "0.1"
           , appAuthors = ["Aliaksey Artamonau <aliaksiej.artamonau@gmail.com>"]
@@ -189,14 +202,16 @@ app = def { appName = "repo-snapshot"
           , appBugEmail = "aliaksiej.artamonau@gmail.com"
           }
 
-foo :: Command ()
+foo :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r)
+    => Command ()
 foo = defCmd { cmdName = "foo"
              , cmdHandler = liftIO $ fooHandler
              , cmdShortDesc = "foo short desc"
              , cmdCategory = "foo"
              }
 
-fooHandler :: IO ()
+fooHandler :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r)
+           => IO ()
 fooHandler = do
   rootDir <- findRootDir
   stateDir <- createStateDir rootDir
@@ -227,6 +242,6 @@ fooHandler = do
 
     threadDelay 10000000
 
-
 main :: IO ()
 main = appMain app
+  where ?factory = lgFactory
