@@ -51,6 +51,8 @@ import Control.Monad.Trans.Control (MonadBaseControl)
 type FactoryContraints n r =
   (MonadGit r n, MonadBaseControl IO n, IsOid (Oid r))
 
+type RepoFactory n r = RepositoryFactory n IO r
+
 repoDirName :: FilePath
 repoDirName = ".repo"
 
@@ -100,7 +102,7 @@ readProjects rootDir = map toProject . lines <$> readFile projectsPath
                                  , path = combine rootDir name
                                  }
 
-readProjectHead :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r)
+readProjectHead :: (FactoryContraints n r, ?factory :: RepoFactory n r)
                 => Project -> IO (RefTarget r)
 readProjectHead Project {path} =
   withRepository ?factory path $ do
@@ -139,7 +141,7 @@ readSnapshot path projects = do
                                   ++ path ++ " : " ++ Text.unpack needle
           where p proj = name proj == needle
 
-saveHeads :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r)
+saveHeads :: (FactoryContraints n r, ?factory :: RepoFactory n r)
           => FilePath -> [Project] -> IO ()
 saveHeads stateDir projects = do
   heads <- liftIO $ mapM readProjectHead projects
@@ -160,7 +162,7 @@ checkout (Project {path}) ref =
 oidToCommitOid :: Oid r -> CommitOid r
 oidToCommitOid = Tagged
 
-findCommit :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r) =>
+findCommit :: (FactoryContraints n r, ?factory :: RepoFactory n r) =>
               Project -> RefTarget r -> (Commit r -> Bool) -> IO (Maybe (Commit r))
 findCommit Project{path} head p =
   withRepository ?factory path $ do
@@ -182,14 +184,14 @@ findCommit Project{path} head p =
                 [] -> return Nothing
                 (first : _) -> go first
 
-findCommitByDate :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r)
+findCommitByDate :: (FactoryContraints n r, ?factory :: RepoFactory n r)
                  => Project -> RefTarget r -> UTCTime
                  -> IO (Maybe (Commit r))
 findCommitByDate proj head date = findCommit proj head p
   where p commit = zonedTimeToUTC (signatureWhen committer) <= date
           where committer = commitCommitter commit
 
-app :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r)
+app :: (FactoryContraints n r, ?factory :: RepoFactory n r)
     => Application () ()
 app = def { appName = "repo-snapshot"
           , appVersion = "0.1"
@@ -202,7 +204,7 @@ app = def { appName = "repo-snapshot"
           , appBugEmail = "aliaksiej.artamonau@gmail.com"
           }
 
-foo :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r)
+foo :: (FactoryContraints n r, ?factory :: RepoFactory n r)
     => Command ()
 foo = defCmd { cmdName = "foo"
              , cmdHandler = liftIO $ fooHandler
@@ -210,7 +212,7 @@ foo = defCmd { cmdName = "foo"
              , cmdCategory = "foo"
              }
 
-fooHandler :: (FactoryContraints n r, ?factory :: RepositoryFactory n IO r)
+fooHandler :: (FactoryContraints n r, ?factory :: RepoFactory n r)
            => IO ()
 fooHandler = do
   rootDir <- findRootDir
