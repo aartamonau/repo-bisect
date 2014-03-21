@@ -4,10 +4,11 @@
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 import Control.Applicative ((<$>))
 import Control.Concurrent (threadDelay)
-import Control.Exception (finally, evaluate)
+import Control.Exception (finally, evaluate, catch)
 import Control.Monad (forM, forM_, when, unless)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 
@@ -30,12 +31,13 @@ import System.FilePath (combine, takeDirectory)
 
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 
-import Git (MonadGit(lookupCommit),
+import Git (MonadGit(lookupCommit, lookupReference),
             Commit(commitParents, commitOid, commitCommitter),
             Signature(signatureWhen),
             RefTarget(RefObj, RefSymbolic), Oid, CommitOid,
             RepositoryFactory, IsOid,
-            withRepository, lookupReference, renderOid, referenceToOid)
+            GitException,
+            withRepository, parseOid, renderOid, referenceToOid)
 import Git.Libgit2 (lgFactory)
 
 import Shelly (cd, run_, shelly, silently)
@@ -46,10 +48,9 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
                    Command(cmdName, cmdHandler, cmdShortDesc, cmdCategory),
                    appMain, defCmd)
 
-import Control.Monad.Trans.Control (MonadBaseControl)
+import Control.Monad.Trans.Control (MonadBaseControl, control)
 
-type FactoryConstraints n r =
-  (MonadGit r n, MonadBaseControl IO n, IsOid (Oid r))
+type FactoryConstraints n r = (MonadGit r n, MonadBaseControl IO n)
 
 type RepoFactory n r = RepositoryFactory n IO r
 
@@ -117,22 +118,50 @@ renderRef :: (IsOid (Oid r)) => RefTarget r -> Text
 renderRef (RefObj obj) = renderOid obj
 renderRef (RefSymbolic sym) = sym
 
+parseRef :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+         => Project -> Text -> IO (RefTarget r)
+parseRef proj ref =
+  withProject proj $ do
+    shaRef <- trySHA
+    finalRef <- maybe (trySymName) (return . Just) shaRef
+
+    return $ fromMaybe
+      (error $ "could not resolve " ++ Text.unpack ref
+               ++ " at " ++ path proj) finalRef
+
+  where trySHA =
+          (do oid <- parseOid ref
+              _ <- lookupCommit (oidToCommitOid oid)
+              return $ Just (RefObj oid))
+          `onException` return Nothing
+
+        trySymName =
+          lookupReference ref `onException` return Nothing
+
+        onException body what =
+          control $ \run -> run body `catch` \ (_ ::GitException) -> run what
+
 headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
 
-saveSnapshot :: IsOid (Oid r) => FilePath -> [(Project, RefTarget r)] -> IO ()
+type Snapshot r = [(Project, RefTarget r)]
+
+saveSnapshot :: IsOid (Oid r) => FilePath -> Snapshot r -> IO ()
 saveSnapshot path projects =
   Text.writeFile path $ Text.concat (map oneLine projects)
 
   where oneLine (Project {name}, ref) =
           Text.concat [renderRef ref, " ", name, "\n"]
 
-readSnapshot :: FilePath -> [Project] -> IO [(Project, Text)]
+readSnapshot :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+             => FilePath -> [Project] -> IO (Snapshot r)
 readSnapshot path projects = do
   content <- Text.readFile path
 
-  forM (map decodeLine $ Text.lines content) $ \(ref, name) ->
-    return (findProject name, ref)
+  forM (map decodeLine $ Text.lines content) $ \(ref, name) -> do
+    let proj = findProject name
+    ref' <- parseRef proj ref
+    return (proj, ref')
 
   where decodeLine s
           | (ref, rest) <- Text.breakOn " " s = (ref, Text.tail rest)
@@ -151,14 +180,15 @@ saveHeads stateDir projects = do
   heads <- liftIO $ mapM readProjectHead projects
   saveSnapshot (headsPath stateDir) (zip projects heads)
 
-readHeads :: FilePath -> [Project] -> IO [(Project, Text)]
+readHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+          => FilePath -> [Project] -> IO (Snapshot r)
 readHeads stateDir projects = readSnapshot (headsPath stateDir) projects
 
-checkout :: Project -> Text -> IO ()
+checkout :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
 checkout (Project {path}) ref =
   shelly $ silently $ do
     cd $ fromString path
-    run_ "git" ["checkout", branchify ref]
+    run_ "git" ["checkout", branchify (renderRef ref)]
 
   where branchify s | Just branch <- Text.stripPrefix "refs/heads/" s = branch
                     | otherwise = s
@@ -235,7 +265,7 @@ fooHandler = do
     putStrLn "projects: "
     forM_ heads $ \(p@(Project {name, path}), head) -> do
       putStrLn $ Text.unpack name ++ ": " ++
-        path ++ " => " ++ Text.unpack head
+        path ++ " => " ++ Text.unpack (renderRef head)
 
       headRef <- readProjectHead p
 
