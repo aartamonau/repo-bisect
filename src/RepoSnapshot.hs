@@ -267,9 +267,7 @@ fooHandler = do
       putStrLn $ Text.unpack name ++ ": " ++
         path ++ " => " ++ Text.unpack (renderRef head)
 
-      headRef <- readProjectHead p
-
-      maybeCommitOid <- (fmap commitOid) <$> findCommitByDate p headRef yearAgo
+      maybeCommitOid <- (fmap commitOid) <$> findCommitByDate p head yearAgo
 
       putStrLn $ "year ago commit => " ++ show maybeCommitOid
       putStrLn ""
