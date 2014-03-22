@@ -5,7 +5,9 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 
+import Control.Arrow (second)
 import Control.Applicative ((<$>))
 import Control.Concurrent (threadDelay)
 import Control.Exception (finally, evaluate, catch)
@@ -14,7 +16,7 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 
 import Data.Default (def)
 import Data.List (find)
-import Data.Maybe (fromMaybe, fromJust)
+import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.String (fromString)
 import Data.Tagged (Tagged(Tagged))
 
@@ -37,7 +39,8 @@ import Git (MonadGit(lookupCommit, lookupReference),
             RefTarget(RefObj, RefSymbolic), Oid, CommitOid,
             RepositoryFactory, IsOid,
             GitException,
-            withRepository, parseOid, renderOid, referenceToOid)
+            withRepository, parseOid, renderOid,
+            referenceToOid, commitRefTarget)
 import Git.Libgit2 (lgFactory)
 
 import Shelly (cd, run_, shelly, silently)
@@ -225,6 +228,16 @@ findCommitByDate proj head date = findCommit proj head p
   where p commit = zonedTimeToUTC (signatureWhen committer) <= date
           where committer = commitCommitter commit
 
+snapshotByDate :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+               => Snapshot r -> UTCTime -> IO (Maybe (Snapshot r))
+snapshotByDate heads date = do
+  commits <- forM heads $ \(p, head) ->
+    fmap (p,) <$> findCommitByDate p head date
+  -- TODO: handle repositories that didn't exists at the time
+  let commits' = sequence commits
+
+  return $ map (second commitRefTarget) <$> commits'
+
 app :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
     => Application () ()
 app = def { appName = "repo-snapshot"
@@ -253,6 +266,7 @@ fooHandler = do
   stateDir <- createStateDir rootDir
 
   yearAgo <- posixToUTC . fromJust <$> io_approxidate "one year ago"
+  monthAgo <- posixToUTC . fromJust <$> io_approxidate "one month ago"
 
   withLock stateDir $ do
     putStrLn $ "root directory: " ++ rootDir
@@ -273,6 +287,28 @@ fooHandler = do
       putStrLn ""
 
       checkout p head
+
+    putStrLn "=================================================="
+
+    yearAgoSnapshot <- snapshotByDate heads yearAgo
+    if isJust yearAgoSnapshot
+      then do
+        putStrLn "one year old snapshot:"
+        forM_ (fromJust yearAgoSnapshot) $ \(Project {name, path}, head) ->
+          putStrLn $ Text.unpack name ++ ": " ++
+                       path ++ " => " ++ Text.unpack (renderRef head)
+      else putStrLn "couldn't grab a year old snapshot"
+
+    putStrLn "=================================================="
+
+    monthAgoSnapshot <- snapshotByDate heads monthAgo
+    if isJust monthAgoSnapshot
+      then do
+        putStrLn "one month old snapshot"
+        forM_ (fromJust monthAgoSnapshot) $ \(Project {name, path}, head) -> do
+          putStrLn $ Text.unpack name ++ ": " ++
+                       path ++ " => " ++ Text.unpack (renderRef head)
+      else putStrLn "couldn't grab a month old snapshot"
 
     threadDelay 10000000
 
