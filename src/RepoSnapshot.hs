@@ -88,8 +88,8 @@ mustDir dir = do
       error $ "failed to create state directory (" ++ dir ++ "): file exists"
     createDirectory dir
 
-createStateDir :: FilePath -> IO FilePath
-createStateDir rootDir = do
+mustStateDir :: FilePath -> IO FilePath
+mustStateDir rootDir = do
   mustDir stateDir
   mustDir (snapshotsDir stateDir)
   return stateDir
@@ -286,7 +286,7 @@ fooHandler :: forall n r . (FactoryConstraints n r, ?factory :: RepoFactory n r)
            => IO ()
 fooHandler = do
   rootDir <- findRootDir
-  stateDir <- createStateDir rootDir
+  stateDir <- mustStateDir rootDir
 
   yearAgo <- posixToUTC . fromJust <$> io_approxidate "one year ago"
   monthAgo <- posixToUTC . fromJust <$> io_approxidate "one month ago"
