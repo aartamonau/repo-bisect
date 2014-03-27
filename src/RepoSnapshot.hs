@@ -76,15 +76,17 @@ findRootDir = go =<< canonicalizePath =<< getCurrentDirectory
 stateDirName :: FilePath
 stateDirName = ".repo-utils"
 
-createStateDir :: FilePath -> IO FilePath
-createStateDir rootDir = do
-  exists <- doesDirectoryExist stateDir
+mustDir :: FilePath -> IO ()
+mustDir dir = do
+  exists <- doesDirectoryExist dir
   unless exists $ do
-    fileExists <- doesFileExist stateDir
+    fileExists <- doesFileExist dir
     when fileExists $
-      error $ "failed to create state directory (" ++ stateDir ++ "): file exists"
-    createDirectory stateDir
-  return stateDir
+      error $ "failed to create state directory (" ++ dir ++ "): file exists"
+    createDirectory dir
+
+createStateDir :: FilePath -> IO FilePath
+createStateDir rootDir = mustDir stateDir >> return stateDir
   where stateDir = combine rootDir stateDirName
 
 withLock :: FilePath -> IO a -> IO a
