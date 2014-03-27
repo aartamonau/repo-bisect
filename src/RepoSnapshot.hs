@@ -49,8 +49,9 @@ import Shelly (cd, run_, shelly, silently)
 import UI.Command (Application(appName, appVersion, appAuthors, appProject,
                                appCmds, appShortDesc, appLongDesc,
                                appCategories, appBugEmail),
+                   App,
                    Command(cmdName, cmdHandler, cmdShortDesc, cmdCategory),
-                   appMain, defCmd)
+                   appMain, defCmd, appArgs)
 
 import Control.Monad.Trans.Control (MonadBaseControl, control)
 
@@ -266,7 +267,7 @@ app = def { appName = "repo-snapshot"
           , appLongDesc = "long description"
           , appProject = "repo-utils"
           , appCategories = ["foo", mainCategory]
-          , appCmds = [list, foo]
+          , appCmds = [list, checkout, foo]
           , appBugEmail = "aliaksiej.artamonau@gmail.com"
           }
 
@@ -282,6 +283,38 @@ listHandler = do
   rootDir <- findRootDir
   stateDir <- mustStateDir rootDir
   mapM_ putStrLn =<< getSnapshots stateDir
+
+checkout :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command ()
+checkout = defCmd { cmdName = "checkout"
+                  , cmdHandler = checkoutHandler
+                  , cmdShortDesc = "checkout snapshot by name or date"
+                  , cmdCategory = mainCategory
+                  }
+
+checkoutHandler :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+                => App () ()
+checkoutHandler = do
+  args <- appArgs
+  case args of
+    [refOrDate] ->
+      go refOrDate
+    _ ->
+      error "bad arguments"
+
+  where go refOrDate = do
+          snapshots <- liftIO $ do
+            stateDir <- mustStateDir =<< findRootDir
+            getSnapshots stateDir
+
+          if refOrDate `elem` snapshots
+            then checkoutSnapshot refOrDate
+            else checkoutDate refOrDate
+
+        checkoutSnapshot snapshot =
+          liftIO $ putStrLn $ "checking out snapshot " ++ snapshot
+
+        checkoutDate date =
+          liftIO $ putStrLn $ "checking out date " ++ date
 
 foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command ()
 foo = defCmd { cmdName = "foo"
