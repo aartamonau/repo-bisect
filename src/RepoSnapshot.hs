@@ -148,6 +148,10 @@ headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
 
 type Snapshot r = [(Project, RefTarget r)]
+type PartialSnapshot r = [(Project, Maybe (RefTarget r))]
+
+toFullSnapshot :: PartialSnapshot r -> Snapshot r
+toFullSnapshot = map (second fromJust) . filter (isJust . snd)
 
 saveSnapshot :: IsOid (Oid r) => FilePath -> Snapshot r -> IO ()
 saveSnapshot path projects =
@@ -229,14 +233,11 @@ findCommitByDate proj head date = findCommit proj head p
           where committer = commitCommitter commit
 
 snapshotByDate :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-               => Snapshot r -> UTCTime -> IO (Maybe (Snapshot r))
-snapshotByDate heads date = do
-  commits <- forM heads $ \(p, head) ->
-    fmap (p,) <$> findCommitByDate p head date
-  -- TODO: handle repositories that didn't exists at the time
-  let commits' = sequence commits
-
-  return $ map (second commitRefTarget) <$> commits'
+               => Snapshot r -> UTCTime -> IO (PartialSnapshot r)
+snapshotByDate heads date =
+  forM heads $ \(p, head) -> do
+    commit <- findCommitByDate p head date
+    return (p, commitRefTarget <$> commit)
 
 app :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
     => Application () ()
@@ -290,25 +291,19 @@ fooHandler = do
 
     putStrLn "=================================================="
 
-    yearAgoSnapshot <- snapshotByDate heads yearAgo
-    if isJust yearAgoSnapshot
-      then do
-        putStrLn "one year old snapshot:"
-        forM_ (fromJust yearAgoSnapshot) $ \(Project {name, path}, head) ->
-          putStrLn $ Text.unpack name ++ ": " ++
-                       path ++ " => " ++ Text.unpack (renderRef head)
-      else putStrLn "couldn't grab a year old snapshot"
+    yearAgoSnapshot <- toFullSnapshot <$> snapshotByDate heads yearAgo
+    putStrLn "one year old snapshot:"
+    forM_ yearAgoSnapshot $ \(Project {name, path}, head) ->
+      putStrLn $ Text.unpack name ++ ": " ++
+                   path ++ " => " ++ Text.unpack (renderRef head)
 
     putStrLn "=================================================="
 
-    monthAgoSnapshot <- snapshotByDate heads monthAgo
-    if isJust monthAgoSnapshot
-      then do
-        putStrLn "one month old snapshot"
-        forM_ (fromJust monthAgoSnapshot) $ \(Project {name, path}, head) -> do
-          putStrLn $ Text.unpack name ++ ": " ++
-                       path ++ " => " ++ Text.unpack (renderRef head)
-      else putStrLn "couldn't grab a month old snapshot"
+    monthAgoSnapshot <- toFullSnapshot <$> snapshotByDate heads monthAgo
+    putStrLn "one month old snapshot"
+    forM_ monthAgoSnapshot $ \(Project {name, path}, head) -> do
+      putStrLn $ Text.unpack name ++ ": " ++
+                   path ++ " => " ++ Text.unpack (renderRef head)
 
     threadDelay 10000000
 
