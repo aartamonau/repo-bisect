@@ -76,6 +76,9 @@ findRootDir = go =<< canonicalizePath =<< getCurrentDirectory
 stateDirName :: FilePath
 stateDirName = ".repo-utils"
 
+snapshotsDir :: FilePath -> FilePath
+snapshotsDir stateDir = combine stateDir "snapshots"
+
 mustDir :: FilePath -> IO ()
 mustDir dir = do
   exists <- doesDirectoryExist dir
@@ -86,7 +89,11 @@ mustDir dir = do
     createDirectory dir
 
 createStateDir :: FilePath -> IO FilePath
-createStateDir rootDir = mustDir stateDir >> return stateDir
+createStateDir rootDir = do
+  mustDir stateDir
+  mustDir (snapshotsDir stateDir)
+  return stateDir
+
   where stateDir = combine rootDir stateDirName
 
 withLock :: FilePath -> IO a -> IO a
