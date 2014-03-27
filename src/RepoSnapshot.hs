@@ -11,7 +11,7 @@ import Control.Arrow (second)
 import Control.Applicative ((<$>))
 import Control.Concurrent (threadDelay)
 import Control.Exception (finally, evaluate, catch)
-import Control.Monad (forM, forM_, when, unless)
+import Control.Monad (forM, forM_, when, unless, filterM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 
 import Data.Default (def)
@@ -28,7 +28,8 @@ import Data.Time (UTCTime, zonedTimeToUTC)
 import Data.Time.Git (io_approxidate, posixToUTC)
 
 import System.Directory (getCurrentDirectory, canonicalizePath,
-                         doesDirectoryExist, doesFileExist, createDirectory)
+                         doesDirectoryExist, doesFileExist, createDirectory,
+                         getDirectoryContents)
 import System.FilePath (combine, takeDirectory)
 
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
@@ -248,6 +249,11 @@ snapshotByDate heads date =
     commit <- findCommitByDate p head date
     return (p, commitRefTarget <$> commit)
 
+getSnapshots :: FilePath -> IO [String]
+getSnapshots stateDir =
+  filterM (doesFileExist . combine dir) =<< getDirectoryContents dir
+  where dir = snapshotsDir stateDir
+
 mainCategory :: String
 mainCategory = "Working with snapshots"
 
@@ -273,7 +279,10 @@ list = defCmd { cmdName = "list"
 
 listHandler :: forall n r . (FactoryConstraints n r, ?factory :: RepoFactory n r)
             => IO ()
-listHandler = return ()
+listHandler = do
+  rootDir <- findRootDir
+  stateDir <- mustStateDir rootDir
+  mapM_ putStrLn =<< getSnapshots stateDir
 
 foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command ()
 foo = defCmd { cmdName = "foo"
