@@ -248,6 +248,9 @@ snapshotByDate heads date =
     commit <- findCommitByDate p head date
     return (p, commitRefTarget <$> commit)
 
+mainCategory :: String
+mainCategory = "Working with snapshots"
+
 app :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
     => Application () ()
 app = def { appName = "repo-snapshot"
@@ -256,10 +259,21 @@ app = def { appName = "repo-snapshot"
           , appShortDesc = "short description"
           , appLongDesc = "long description"
           , appProject = "repo-utils"
-          , appCategories = ["foo"]
-          , appCmds = [foo]
+          , appCategories = ["foo", mainCategory]
+          , appCmds = [list, foo]
           , appBugEmail = "aliaksiej.artamonau@gmail.com"
           }
+
+list :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command ()
+list = defCmd { cmdName = "list"
+              , cmdHandler = liftIO $ listHandler
+              , cmdCategory = mainCategory
+              , cmdShortDesc = "List known snapshot"
+              }
+
+listHandler :: forall n r . (FactoryConstraints n r, ?factory :: RepoFactory n r)
+            => IO ()
+listHandler = return ()
 
 foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command ()
 foo = defCmd { cmdName = "foo"
