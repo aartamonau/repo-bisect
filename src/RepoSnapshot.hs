@@ -261,8 +261,7 @@ app = def { appName = "repo-snapshot"
           , appBugEmail = "aliaksiej.artamonau@gmail.com"
           }
 
-foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-    => Command ()
+foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command ()
 foo = defCmd { cmdName = "foo"
              , cmdHandler = liftIO $ fooHandler
              , cmdShortDesc = "foo short desc"
