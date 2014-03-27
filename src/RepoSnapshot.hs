@@ -201,8 +201,8 @@ readHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
           => FilePath -> [Project] -> IO (Snapshot r)
 readHeads stateDir projects = readSnapshot (headsPath stateDir) projects
 
-checkout :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
-checkout (Project {path}) ref =
+checkoutRef :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
+checkoutRef (Project {path}) ref =
   shelly $ silently $ do
     cd $ fromString path
     run_ "git" ["checkout", branchify (renderRef ref)]
@@ -318,7 +318,7 @@ fooHandler = do
       putStrLn $ "year ago commit => " ++ show maybeCommitOid
       putStrLn ""
 
-      checkout p head
+      checkoutRef p head
 
     putStrLn "=================================================="
 
