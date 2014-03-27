@@ -270,15 +270,14 @@ app = def { appName = "repo-snapshot"
           , appBugEmail = "aliaksiej.artamonau@gmail.com"
           }
 
-list :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command ()
+list :: Command ()
 list = defCmd { cmdName = "list"
               , cmdHandler = liftIO $ listHandler
               , cmdCategory = mainCategory
               , cmdShortDesc = "List known snapshot"
               }
 
-listHandler :: forall n r . (FactoryConstraints n r, ?factory :: RepoFactory n r)
-            => IO ()
+listHandler :: IO ()
 listHandler = do
   rootDir <- findRootDir
   stateDir <- mustStateDir rootDir
