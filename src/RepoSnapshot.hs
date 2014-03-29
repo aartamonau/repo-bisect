@@ -220,8 +220,8 @@ checkoutRef (Project {path}) ref =
 oidToCommitOid :: Oid r -> CommitOid r
 oidToCommitOid = Tagged
 
-findCommit :: (FactoryConstraints n r, ?factory :: RepoFactory n r) =>
-              Project -> RefTarget r -> (Commit r -> Bool) -> IO (Maybe (Commit r))
+findCommit :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+           => Project -> RefTarget r -> (Commit r -> Bool) -> IO (Maybe (Commit r))
 findCommit proj head p =
   withProject proj $ do
     headCommitOid <- oidToCommitOid <$> resolve head
