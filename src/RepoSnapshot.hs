@@ -141,6 +141,10 @@ renderRef :: (IsOid (Oid r)) => RefTarget r -> Text
 renderRef (RefObj obj) = renderOid obj
 renderRef (RefSymbolic sym) = sym
 
+onGitException :: MonadBaseControl IO m => m a -> m a -> m a
+onGitException body what =
+  control $ \run -> run body `catch` \ (_ ::GitException) -> run what
+
 parseRef :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
          => Project -> Text -> IO (RefTarget r)
 parseRef proj ref =
@@ -156,13 +160,10 @@ parseRef proj ref =
           (do oid <- parseOid ref
               _ <- lookupCommit (oidToCommitOid oid)
               return $ Just (RefObj oid))
-          `onException` return Nothing
+          `onGitException` return Nothing
 
         trySymName =
-          lookupReference ref `onException` return Nothing
-
-        onException body what =
-          control $ \run -> run body `catch` \ (_ ::GitException) -> run what
+          lookupReference ref `onGitException` return Nothing
 
 headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
