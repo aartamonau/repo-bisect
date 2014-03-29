@@ -90,6 +90,12 @@ mustDir dir = do
       error $ "failed to create state directory (" ++ dir ++ "): file exists"
     createDirectory dir
 
+mustFile :: FilePath -> IO ()
+mustFile path = do
+  exists <- doesFileExist path
+  unless exists $
+    error $ "could not find " ++ path
+
 mustStateDir :: FilePath -> IO FilePath
 mustStateDir rootDir = do
   mustDir stateDir
