@@ -7,6 +7,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 
+-- to give a Show instance to Snapshot r
+{-# LANGUAGE UndecidableInstances #-}
+
 import Control.Arrow (second)
 import Control.Applicative ((<$>))
 import Control.Concurrent (threadDelay)
@@ -166,6 +169,12 @@ headsPath stateDir = combine stateDir "HEADS"
 
 newtype Snapshot r = Snapshot { unSnapshot :: [(Project, RefTarget r)] }
 type PartialSnapshot r = [(Project, Maybe (RefTarget r))]
+
+instance IsOid (Oid r) => Show (Snapshot r) where
+  show = concatMap showPair . unSnapshot
+    where showPair (proj, ref) =
+            Text.unpack (name proj)
+              ++ " => " ++ Text.unpack (renderRef ref) ++ "\n"
 
 toFullSnapshot :: PartialSnapshot r -> Snapshot r
 toFullSnapshot = Snapshot . map (second fromJust) . filter (isJust . snd)
@@ -361,18 +370,12 @@ fooHandler = do
     putStrLn "=================================================="
 
     yearAgoSnapshot <- toFullSnapshot <$> snapshotByDate heads yearAgo
-    putStrLn "one year old snapshot:"
-    forM_ (unSnapshot yearAgoSnapshot) $ \(Project {name, path}, head) ->
-      putStrLn $ Text.unpack name ++ ": " ++
-                   path ++ " => " ++ Text.unpack (renderRef head)
+    putStrLn $ "one year old snapshot:\n" ++ show yearAgoSnapshot
 
     putStrLn "=================================================="
 
     monthAgoSnapshot <- toFullSnapshot <$> snapshotByDate heads monthAgo
-    putStrLn "one month old snapshot"
-    forM_ (unSnapshot monthAgoSnapshot) $ \(Project {name, path}, head) -> do
-      putStrLn $ Text.unpack name ++ ": " ++
-                   path ++ " => " ++ Text.unpack (renderRef head)
+    putStrLn $ "one month old snapshot:\n" ++ show monthAgoSnapshot
 
     threadDelay 10000000
 
