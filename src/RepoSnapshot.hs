@@ -164,15 +164,15 @@ parseRef proj ref =
 headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
 
-type Snapshot r = [(Project, RefTarget r)]
+newtype Snapshot r = Snapshot { unSnapshot :: [(Project, RefTarget r)] }
 type PartialSnapshot r = [(Project, Maybe (RefTarget r))]
 
 toFullSnapshot :: PartialSnapshot r -> Snapshot r
-toFullSnapshot = map (second fromJust) . filter (isJust . snd)
+toFullSnapshot = Snapshot . map (second fromJust) . filter (isJust . snd)
 
 saveSnapshot :: IsOid (Oid r) => FilePath -> Snapshot r -> IO ()
 saveSnapshot path projects =
-  Text.writeFile path $ Text.concat (map oneLine projects)
+  Text.writeFile path $ Text.concat (map oneLine $ unSnapshot projects)
 
   where oneLine (Project {name}, ref) =
           Text.concat [renderRef ref, " ", name, "\n"]
@@ -182,7 +182,7 @@ readSnapshot :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
 readSnapshot path projects = do
   content <- Text.readFile path
 
-  forM (map decodeLine $ Text.lines content) $ \(ref, name) -> do
+  fmap Snapshot $ forM (map decodeLine $ Text.lines content) $ \(ref, name) -> do
     let proj = findProject name
     ref' <- parseRef proj ref
     return (proj, ref')
@@ -202,7 +202,7 @@ saveHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
           => FilePath -> [Project] -> IO ()
 saveHeads stateDir projects = do
   heads <- liftIO $ mapM readProjectHead projects
-  saveSnapshot (headsPath stateDir) (zip projects heads)
+  saveSnapshot (headsPath stateDir) (Snapshot $ zip projects heads)
 
 readHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
           => FilePath -> [Project] -> IO (Snapshot r)
@@ -252,7 +252,7 @@ findCommitByDate proj head date = findCommit proj head p
 snapshotByDate :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
                => Snapshot r -> UTCTime -> IO (PartialSnapshot r)
 snapshotByDate heads date =
-  forM heads $ \(p, head) -> do
+  forM (unSnapshot heads) $ \(p, head) -> do
     commit <- findCommitByDate p head date
     return (p, commitRefTarget <$> commit)
 
@@ -347,7 +347,7 @@ fooHandler = do
     heads <- readHeads stateDir projects
 
     putStrLn "projects: "
-    forM_ heads $ \(p@(Project {name, path}), head) -> do
+    forM_ (unSnapshot heads) $ \(p@(Project {name, path}), head) -> do
       putStrLn $ Text.unpack name ++ ": " ++
         path ++ " => " ++ Text.unpack (renderRef head)
 
@@ -362,7 +362,7 @@ fooHandler = do
 
     yearAgoSnapshot <- toFullSnapshot <$> snapshotByDate heads yearAgo
     putStrLn "one year old snapshot:"
-    forM_ yearAgoSnapshot $ \(Project {name, path}, head) ->
+    forM_ (unSnapshot yearAgoSnapshot) $ \(Project {name, path}, head) ->
       putStrLn $ Text.unpack name ++ ": " ++
                    path ++ " => " ++ Text.unpack (renderRef head)
 
@@ -370,7 +370,7 @@ fooHandler = do
 
     monthAgoSnapshot <- toFullSnapshot <$> snapshotByDate heads monthAgo
     putStrLn "one month old snapshot"
-    forM_ monthAgoSnapshot $ \(Project {name, path}, head) -> do
+    forM_ (unSnapshot monthAgoSnapshot) $ \(Project {name, path}, head) -> do
       putStrLn $ Text.unpack name ++ ": " ++
                    path ++ " => " ++ Text.unpack (renderRef head)
 
