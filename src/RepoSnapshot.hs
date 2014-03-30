@@ -11,7 +11,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 import Control.Arrow (second)
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<|>))
 import Control.Concurrent (threadDelay)
 import Control.Exception (finally, evaluate, catch)
 import Control.Monad (forM, forM_, when, unless, filterM)
@@ -21,7 +21,7 @@ import Control.Monad.Trans (lift)
 
 import Data.Default (def)
 import Data.List (find)
-import Data.Maybe (fromMaybe, fromJust, isJust)
+import Data.Maybe (fromMaybe, fromJust, isJust, isNothing)
 import Data.String (fromString)
 import Data.Tagged (Tagged(Tagged))
 
@@ -38,6 +38,9 @@ import System.Directory (getCurrentDirectory, canonicalizePath,
 import System.FilePath (combine, takeDirectory)
 
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
+
+import Text.XML.Light (QName(QName), parseXMLDoc, findElement,
+                       findChild, findChildren, findAttr)
 
 import Git (MonadGit(lookupCommit, lookupReference),
             Commit(commitParents, commitOid, commitCommitter),
@@ -280,6 +283,65 @@ getSnapshots stateDir =
   filterM (doesFileExist . combine dir) =<< getDirectoryContents dir
   where dir = snapshotsDir stateDir
 
+readManifest :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+             => FilePath -> IO (Snapshot r)
+readManifest rootDir = do
+  mustFile manifestPath
+  doc <- parseXMLDoc <$> readFile manifestPath
+  let maybeManifest = findElement (byName "manifest") =<< doc
+
+  let manifest = fromJust maybeManifest
+  let remotes = map parseRemote $ findChildren (byName "remote") manifest
+  let projects = findChildren (byName "project") manifest
+  let def = parseDefault remotes $ findChild (byName "default") manifest
+
+  when (isNothing maybeManifest || null remotes || null projects)
+    errorBadManifest
+
+  Snapshot <$> mapM (parseProject def) projects
+
+  where manifestPath = combine rootDir ".repo/manifest.xml"
+
+        byName name = QName name Nothing Nothing
+
+        errorBadManifest = error $ "invalid manifest file " ++ manifestPath
+
+        must = fromMaybe errorBadManifest
+
+        mustAttr attr elem = must $ findAttr attr elem
+
+        parseRemote elem = (name, fromMaybe name alias)
+          where name = mustAttr (byName "name") elem
+                alias = findAttr (byName "alias") elem
+
+        findRemote remotes name =
+          fromMaybe errorBadManifest $ lookup name remotes
+
+        parseDefault remotes = maybe (Nothing, Nothing) go
+          where go elem = (remote, revision)
+                  where remote = findRemote remotes <$>
+                                   findAttr (byName "remote") elem
+                        revision = findAttr (byName "revision") elem
+
+        parseProject (defRemote, defRev) elem =
+          withProject project $ do
+            revIsSHA <- isSHA rev
+            let ref | revIsSHA = rev
+                    | Text.isPrefixOf "refs/tags/" rev = rev
+                    | Just branch <- Text.stripPrefix "refs/heads" rev =
+                      Text.concat ["refs/remotes/", remote, "/", branch]
+                    | otherwise = Text.concat ["refs/remotes/", remote, "/", rev]
+            parsedRef <- parseRef ref
+            return (project, parsedRef)
+          where name = mustAttr (byName "name") elem
+                path = must $ findAttr (byName "path") elem <|> Just name
+                absPath = combine rootDir path
+                project = Project { name = Text.pack name,
+                                    path = absPath }
+
+                remote = Text.pack $ must $ findAttr (byName "remote") elem <|> defRemote
+                rev = Text.pack $ must $ findAttr (byName "revision") elem <|> defRev
+
 mainCategory :: String
 mainCategory = "Working with snapshots"
 
@@ -364,6 +426,9 @@ fooHandler = do
 
     saveHeads stateDir projects
     heads <- readHeads stateDir projects
+
+    manifest <- readManifest rootDir
+    putStrLn $ "manifest:\n" ++ show manifest
 
     putStrLn "projects: "
     forM_ (unSnapshot heads) $ \(p@(Project {name, path}), head) -> do
