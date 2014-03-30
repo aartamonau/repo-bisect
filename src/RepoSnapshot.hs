@@ -218,7 +218,7 @@ saveHeads stateDir projects = do
 
 readHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
           => FilePath -> [Project] -> IO (Snapshot r)
-readHeads stateDir projects = readSnapshot (headsPath stateDir) projects
+readHeads stateDir = readSnapshot (headsPath stateDir)
 
 checkoutRef :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
 checkoutRef (Project {path}) ref =
@@ -291,7 +291,7 @@ app = def { appName = "repo-snapshot"
 
 list :: Command ()
 list = defCmd { cmdName = "list"
-              , cmdHandler = liftIO $ listHandler
+              , cmdHandler = liftIO listHandler
               , cmdCategory = mainCategory
               , cmdShortDesc = "List known snapshot"
               }
@@ -336,7 +336,7 @@ checkoutHandler = do
 
 foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command ()
 foo = defCmd { cmdName = "foo"
-             , cmdHandler = liftIO $ fooHandler
+             , cmdHandler = liftIO fooHandler
              , cmdShortDesc = "foo short desc"
              , cmdCategory = "foo"
              }
@@ -363,7 +363,7 @@ fooHandler = do
       putStrLn $ Text.unpack name ++ ": " ++
         path ++ " => " ++ Text.unpack (renderRef head)
 
-      maybeCommitOid <- (fmap commitOid) <$> findCommitByDate p head yearAgo
+      maybeCommitOid <- fmap commitOid <$> findCommitByDate p head yearAgo
 
       putStrLn $ "year ago commit => " ++ show maybeCommitOid
       putStrLn ""
