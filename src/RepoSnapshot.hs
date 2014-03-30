@@ -342,6 +342,11 @@ readManifest rootDir = do
                 remote = Text.pack $ must $ findAttr (byName "remote") elem <|> defRemote
                 rev = Text.pack $ must $ findAttr (byName "revision") elem <|> defRev
 
+mustParseDate :: String -> IO UTCTime
+mustParseDate date = do
+  parsed <- fmap posixToUTC <$> io_approxidate date
+  return $ fromMaybe (error $ "can't recognize date \"" ++ date ++ "\"") parsed
+
 mainCategory :: String
 mainCategory = "Working with snapshots"
 
@@ -416,8 +421,8 @@ fooHandler = do
   rootDir <- findRootDir
   stateDir <- mustStateDir rootDir
 
-  yearAgo <- posixToUTC . fromJust <$> io_approxidate "one year ago"
-  monthAgo <- posixToUTC . fromJust <$> io_approxidate "one month ago"
+  yearAgo <- mustParseDate "one year ago"
+  monthAgo <- mustParseDate "one month ago"
 
   withLock stateDir $ do
     putStrLn $ "root directory: " ++ rootDir
