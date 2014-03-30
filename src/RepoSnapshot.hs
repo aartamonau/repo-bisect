@@ -16,6 +16,8 @@ import Control.Concurrent (threadDelay)
 import Control.Exception (finally, evaluate, catch)
 import Control.Monad (forM, forM_, when, unless, filterM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.Reader (ReaderT, runReaderT)
+import Control.Monad.Trans (lift)
 
 import Data.Default (def)
 import Data.List (find)
@@ -119,9 +121,11 @@ data Project = Project { name :: Text
                        }
              deriving Show
 
+type RM m a = ReaderT Project m a
+
 withProject :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-            => Project -> n a -> IO a
-withProject proj = withRepository ?factory (path proj)
+            => Project -> RM n a -> IO a
+withProject proj k = withRepository ?factory (path proj) $ runReaderT k proj
 
 readProjects :: FilePath -> IO [Project]
 readProjects rootDir = map toProject . lines <$> readFile projectsPath
@@ -134,7 +138,7 @@ readProjectHead :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
                 => Project -> IO (RefTarget r)
 readProjectHead proj =
   withProject proj $ do
-    ref <- lookupReference "HEAD"
+    ref <- lift $ lookupReference "HEAD"
     return $ fromMaybe (error $ "could not resolve HEAD of " ++ path proj) ref
 
 renderRef :: (IsOid (Oid r)) => RefTarget r -> Text
@@ -146,15 +150,15 @@ onGitException body what =
   control $ \run -> run body `catch` \ (_ ::GitException) -> run what
 
 parseSHA :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-         => Text -> n (Maybe (RefTarget r))
+         => Text -> RM n (Maybe (RefTarget r))
 parseSHA ref =
-  (do oid <- parseOid ref
-      _ <- lookupCommit (oidToCommitOid oid)
+  (do oid <- lift $ parseOid ref
+      _ <- lift $ lookupCommit (oidToCommitOid oid)
       return $ Just (RefObj oid))
   `onGitException` return Nothing
 
 isSHA :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-      => Text -> n Bool
+      => Text -> RM n Bool
 isSHA ref = isJust <$> parseSHA ref
 
 parseRef :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
@@ -168,8 +172,7 @@ parseRef proj ref =
       (error $ "could not resolve " ++ Text.unpack ref
                ++ " at " ++ path proj) finalRef
 
-  where trySymName =
-          lookupReference ref `onGitException` return Nothing
+  where trySymName = lift $ lookupReference ref `onGitException` return Nothing
 
 headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
@@ -244,13 +247,13 @@ findCommit proj head p =
     go headCommitOid
 
   where resolve ref = do
-          maybeOid <- referenceToOid ref
+          maybeOid <- lift $ referenceToOid ref
           return $
             fromMaybe (error $ "could not resolve "
                        ++ Text.unpack (renderRef ref) ++ " at " ++ path proj) maybeOid
 
         go cid = do
-          commit <- lookupCommit cid
+          commit <- lift $ lookupCommit cid
           if p commit
             then return $ Just commit
             else
