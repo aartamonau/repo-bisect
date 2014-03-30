@@ -327,7 +327,7 @@ readManifest rootDir = do
           withProject project $ do
             revIsSHA <- isSHA rev
             let ref | revIsSHA = rev
-                    | Text.isPrefixOf "refs/tags/" rev = rev
+                    | "refs/tags/" `Text.isPrefixOf` rev = rev
                     | Just branch <- Text.stripPrefix "refs/heads" rev =
                       Text.concat ["refs/remotes/", remote, "/", branch]
                     | otherwise = Text.concat ["refs/remotes/", remote, "/", rev]
