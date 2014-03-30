@@ -16,7 +16,7 @@ import Control.Concurrent (threadDelay)
 import Control.Exception (finally, evaluate, catch)
 import Control.Monad (forM, forM_, when, unless, filterM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Reader (ReaderT, runReaderT)
+import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.Trans (lift)
 
 import Data.Default (def)
@@ -162,15 +162,15 @@ isSHA :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
 isSHA ref = isJust <$> parseSHA ref
 
 parseRef :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-         => Project -> Text -> IO (RefTarget r)
-parseRef proj ref =
-  withProject proj $ do
-    shaRef <- parseSHA ref
-    finalRef <- maybe trySymName (return . Just) shaRef
+         => Text -> RM n (RefTarget r)
+parseRef ref = do
+  shaRef <- parseSHA ref
+  finalRef <- maybe trySymName (return . Just) shaRef
 
-    return $ fromMaybe
-      (error $ "could not resolve " ++ Text.unpack ref
-               ++ " at " ++ path proj) finalRef
+  proj <- ask
+  return $ fromMaybe
+    (error $ "could not resolve " ++ Text.unpack ref
+             ++ " at " ++ path proj) finalRef
 
   where trySymName = lift $ lookupReference ref `onGitException` return Nothing
 
@@ -203,7 +203,7 @@ readSnapshot path projects = do
 
   fmap Snapshot $ forM (map decodeLine $ Text.lines content) $ \(ref, name) -> do
     let proj = findProject name
-    ref' <- parseRef proj ref
+    ref' <- withProject proj $ parseRef ref
     return (proj, ref')
 
   where decodeLine s
