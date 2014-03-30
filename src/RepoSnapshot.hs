@@ -14,7 +14,7 @@ import Control.Arrow (second)
 import Control.Applicative ((<$>), (<|>))
 import Control.Concurrent (threadDelay)
 import Control.Exception (finally, evaluate, catch)
-import Control.Monad (forM, forM_, when, unless, filterM)
+import Control.Monad (forM, forM_, zipWithM_, when, unless, filterM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.Trans (lift)
@@ -239,6 +239,9 @@ checkoutRef (Project {path}) ref =
   where branchify s | Just branch <- Text.stripPrefix "refs/heads/" s = branch
                     | otherwise = s
 
+checkoutSnapshot :: IsOid (Oid r) => Snapshot r -> IO ()
+checkoutSnapshot = uncurry (zipWithM_ checkoutRef) . unzip . unSnapshot
+
 oidToCommitOid :: Oid r -> CommitOid r
 oidToCommitOid = Tagged
 
@@ -456,6 +459,9 @@ fooHandler = do
 
     monthAgoSnapshot <- toFullSnapshot <$> snapshotByDate heads monthAgo
     putStrLn $ "one month old snapshot:\n" ++ show monthAgoSnapshot
+
+    putStrLn "checking out one month old snapshot"
+    checkoutSnapshot monthAgoSnapshot
 
     threadDelay 10000000
 
