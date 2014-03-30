@@ -145,24 +145,26 @@ onGitException :: MonadBaseControl IO m => m a -> m a -> m a
 onGitException body what =
   control $ \run -> run body `catch` \ (_ ::GitException) -> run what
 
+parseSHA :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+         => Text -> n (Maybe (RefTarget r))
+parseSHA ref =
+  (do oid <- parseOid ref
+      _ <- lookupCommit (oidToCommitOid oid)
+      return $ Just (RefObj oid))
+  `onGitException` return Nothing
+
 parseRef :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
          => Project -> Text -> IO (RefTarget r)
 parseRef proj ref =
   withProject proj $ do
-    shaRef <- trySHA
-    finalRef <- maybe (trySymName) (return . Just) shaRef
+    shaRef <- parseSHA ref
+    finalRef <- maybe trySymName (return . Just) shaRef
 
     return $ fromMaybe
       (error $ "could not resolve " ++ Text.unpack ref
                ++ " at " ++ path proj) finalRef
 
-  where trySHA =
-          (do oid <- parseOid ref
-              _ <- lookupCommit (oidToCommitOid oid)
-              return $ Just (RefObj oid))
-          `onGitException` return Nothing
-
-        trySymName =
+  where trySymName =
           lookupReference ref `onGitException` return Nothing
 
 headsPath :: FilePath -> FilePath
