@@ -39,6 +39,8 @@ import System.FilePath (combine, takeDirectory)
 
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 
+import System.IO (stderr, hPutStrLn)
+
 import Text.XML.Light (QName(QName), parseXMLDoc, findElement,
                        findChild, findChildren, findAttr)
 
@@ -391,25 +393,38 @@ checkoutHandler :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
 checkoutHandler = do
   args <- appArgs
   case args of
-    [refOrDate] ->
-      go refOrDate
+    [snapshotOrDate] ->
+      go snapshotOrDate
     _ ->
       error "bad arguments"
 
-  where go refOrDate = do
-          snapshots <- liftIO $ do
-            stateDir <- mustStateDir =<< findRootDir
-            getSnapshots stateDir
+  where go snapshotOrDate = do
+          (snapshots, manifest) <- liftIO $ do
+            rootDir <- findRootDir
+            stateDir <- mustStateDir rootDir
+            manifest <- readManifest rootDir
+            snapshots <- getSnapshots stateDir
 
-          if refOrDate `elem` snapshots
-            then checkoutSnapshot refOrDate
-            else checkoutDate refOrDate
+            return (snapshots, manifest)
 
-        checkoutSnapshot snapshot =
-          liftIO $ putStrLn $ "checking out snapshot " ++ snapshot
+          if snapshotOrDate `elem` snapshots
+            then checkoutSnapshotByName snapshotOrDate
+            else checkoutDate manifest snapshotOrDate
 
-        checkoutDate date =
-          liftIO $ putStrLn $ "checking out date " ++ date
+        checkoutSnapshotByName snapshot = liftIO $ do
+          putStrLn $ "checking out snapshot " ++ snapshot
+
+        checkoutDate manifest date = liftIO $ do
+          partialSnapshot <- snapshotByDate manifest =<< mustParseDate date
+          forM_ partialSnapshot $ \(Project{name}, ref) ->
+            when (isNothing ref) $
+              warn $ "couldn't find a commit matching the date in "
+                       ++ Text.unpack name
+
+          checkoutSnapshot (toFullSnapshot partialSnapshot)
+
+        warn :: String -> IO ()
+        warn = hPutStrLn stderr
 
 foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command ()
 foo = defCmd { cmdName = "foo"
