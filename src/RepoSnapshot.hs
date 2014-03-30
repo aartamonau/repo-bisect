@@ -153,6 +153,10 @@ parseSHA ref =
       return $ Just (RefObj oid))
   `onGitException` return Nothing
 
+isSHA :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+      => Text -> n Bool
+isSHA ref = isJust <$> parseSHA ref
+
 parseRef :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
          => Project -> Text -> IO (RefTarget r)
 parseRef proj ref =
