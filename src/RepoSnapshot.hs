@@ -204,6 +204,7 @@ saveSnapshot path projects =
 readSnapshotFile :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
                  => FilePath -> [Project] -> IO (Snapshot r)
 readSnapshotFile path projects = do
+  mustFile path
   content <- Text.readFile path
 
   fmap Snapshot $ forM (map decodeLine $ Text.lines content) $ \(ref, name) -> do
