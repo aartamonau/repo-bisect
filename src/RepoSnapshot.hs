@@ -132,13 +132,6 @@ withProject :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
             => Project -> RM n a -> IO a
 withProject proj k = withRepository ?factory (path proj) $ runReaderT k proj
 
-readProjects :: FilePath -> IO [Project]
-readProjects rootDir = map toProject . lines <$> readFile projectsPath
-  where projectsPath = combine rootDir ".repo/project.list"
-        toProject name = Project { name = Text.pack name
-                                 , path = combine rootDir name
-                                 }
-
 readProjectHead :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
                 => Project -> IO (RefTarget r)
 readProjectHead proj =
@@ -448,13 +441,14 @@ fooHandler = do
   withLock stateDir $ do
     putStrLn $ "root directory: " ++ rootDir
     putStrLn $ "state directory: " ++ stateDir
-    projects <- readProjects rootDir
-
-    saveHeads stateDir projects
-    heads <- readHeads stateDir projects
 
     manifest <- readManifest rootDir
     putStrLn $ "manifest:\n" ++ show manifest
+
+    let projects = snapshotProjects manifest
+
+    saveHeads stateDir projects
+    heads <- readHeads stateDir projects
 
     putStrLn "projects: "
     forM_ (unSnapshot heads) $ \(p@(Project {name, path}), head) -> do
