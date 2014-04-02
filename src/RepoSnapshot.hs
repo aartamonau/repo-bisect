@@ -223,8 +223,8 @@ readSnapshotFile path projects = do
 
 readSnapshot :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
              => String -> String -> [Project] -> IO (Snapshot r)
-readSnapshot stateDir name projects =
-  readSnapshotFile (combine (snapshotsDir stateDir) name) projects
+readSnapshot stateDir name =
+  readSnapshotFile (combine (snapshotsDir stateDir) name)
 
 saveHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
           => FilePath -> [Project] -> IO ()
@@ -386,7 +386,7 @@ app = def' { appName = "repo-snapshot"
 
 options :: [OptDescr (Options -> Options)]
 options = [forceDateOpt]
-  where forceDateOpt = Option ['d'] ["--force-date"]
+  where forceDateOpt = Option "d" ["--force-date"]
                               (NoArg $ \opts -> opts { forceDate = True})
                               "interpret command argument as a date"
 
