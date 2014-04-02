@@ -404,8 +404,7 @@ checkoutHandler = appArgs >>= \args -> liftIO $ do
     Right snapshot ->
       handleSnapshot stateDir manifest snapshot
 
-  where parseArgs ("--" : args) _ = Left $ unwords args
-        parseArgs args snapshots
+  where parseArgs args snapshots
           | snapshotOrDate `elem` snapshots = Right snapshotOrDate
           | otherwise = Left snapshotOrDate
           where snapshotOrDate = unwords args
