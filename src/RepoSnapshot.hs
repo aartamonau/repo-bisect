@@ -424,7 +424,7 @@ checkoutHandler = appArgs >>= \args -> liftIO $ do
           checkoutSnapshot (toFullSnapshot partialSnapshot)
 
         warn :: String -> IO ()
-        warn = hPutStrLn stderr
+        warn = hPutStrLn stderr . ("Warning: " ++)
 
 foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command ()
 foo = defCmd { cmdName = "foo"
