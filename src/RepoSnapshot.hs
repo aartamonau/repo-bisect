@@ -194,6 +194,9 @@ instance IsOid (Oid r) => Show (Snapshot r) where
 toFullSnapshot :: PartialSnapshot r -> Snapshot r
 toFullSnapshot = Snapshot . map (second fromJust) . filter (isJust . snd)
 
+snapshotProjects :: Snapshot r -> [Project]
+snapshotProjects = fst . unzip . unSnapshot
+
 saveSnapshot :: IsOid (Oid r) => FilePath -> Snapshot r -> IO ()
 saveSnapshot path projects =
   Text.writeFile path $ Text.concat (map oneLine $ unSnapshot projects)
@@ -401,22 +404,20 @@ checkoutHandler = do
   go snapshotOrDate
 
   where go snapshotOrDate = do
-          (snapshots, manifest) <- liftIO $ do
-            rootDir <- findRootDir
-            stateDir <- mustStateDir rootDir
-            manifest <- readManifest rootDir
-            snapshots <- getSnapshots stateDir
-
-            return (snapshots, manifest)
+          rootDir <- liftIO findRootDir
+          stateDir <- liftIO $ mustStateDir rootDir
+          manifest <- liftIO $ readManifest rootDir
+          snapshots <- liftIO $ getSnapshots stateDir
 
           if snapshotOrDate `elem` snapshots
-            then checkoutSnapshotByName snapshotOrDate
-            else checkoutDate manifest snapshotOrDate
+            then handleSnapshot stateDir manifest snapshotOrDate
+            else handleDate manifest snapshotOrDate
 
-        checkoutSnapshotByName snapshot = liftIO $ do
-          putStrLn $ "checking out snapshot " ++ snapshot
+        handleSnapshot stateDir manifest snapshot = liftIO $
+              checkoutSnapshot =<< readSnapshot stateDir snapshot projects
+          where projects = snapshotProjects manifest
 
-        checkoutDate manifest date = liftIO $ do
+        handleDate manifest date = liftIO $ do
           partialSnapshot <- snapshotByDate manifest =<< mustParseDate date
           forM_ partialSnapshot $ \(Project{name}, ref) ->
             when (isNothing ref) $
