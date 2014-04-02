@@ -19,7 +19,7 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.Trans (lift)
 
-import Data.Default (def)
+import Data.Default (Default(def))
 import Data.List (find)
 import Data.Maybe (fromMaybe, fromJust, isJust, isNothing)
 import Data.String (fromString)
@@ -56,12 +56,14 @@ import Git.Libgit2 (lgFactory)
 
 import Shelly (cd, run_, shelly, silently)
 
+import System.Console.GetOpt (OptDescr(Option), ArgDescr(NoArg))
 import UI.Command (Application(appName, appVersion, appAuthors, appProject,
                                appCmds, appShortDesc, appLongDesc,
-                               appCategories, appBugEmail),
+                               appCategories, appBugEmail,
+                               appOptions, appProcessConfig),
                    App,
                    Command(cmdName, cmdHandler, cmdShortDesc, cmdCategory),
-                   appMain, defCmd, appArgs)
+                   appMainWithOptions, defCmd, appArgs, appConfig)
 
 import Control.Monad.Trans.Control (MonadBaseControl, control)
 
@@ -357,20 +359,38 @@ mustParseDate date = do
 mainCategory :: String
 mainCategory = "Working with snapshots"
 
-app :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-    => Application () ()
-app = def { appName = "repo-snapshot"
-          , appVersion = "0.1"
-          , appAuthors = ["Aliaksey Artamonau <aliaksiej.artamonau@gmail.com>"]
-          , appShortDesc = "short description"
-          , appLongDesc = "long description"
-          , appProject = "repo-utils"
-          , appCategories = ["foo", mainCategory]
-          , appCmds = [list, checkout, foo]
-          , appBugEmail = "aliaksiej.artamonau@gmail.com"
-          }
+data Options = Options { forceDate :: Bool }
 
-list :: Command ()
+instance Default Options where
+  def = Options { forceDate = False }
+
+app :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+    => Application (Options -> Options) Options
+app = def' { appName = "repo-snapshot"
+           , appVersion = "0.1"
+           , appAuthors = ["Aliaksey Artamonau <aliaksiej.artamonau@gmail.com>"]
+           , appShortDesc = "short description"
+           , appLongDesc = "long description"
+           , appProject = "repo-utils"
+           , appCategories = ["foo", mainCategory]
+           , appCmds = [list, checkout, foo]
+           , appBugEmail = "aliaksiej.artamonau@gmail.com"
+           , appOptions = options
+           , appProcessConfig = processConfig
+           }
+  where processConfig :: Options -> [Options -> Options] -> IO Options
+        processConfig z = return . foldl (flip ($)) z
+
+        def' :: Application (Options -> Options) Options
+        def' = def
+
+options :: [OptDescr (Options -> Options)]
+options = [forceDateOpt]
+  where forceDateOpt = Option ['d'] ["--force-date"]
+                              (NoArg $ \opts -> opts { forceDate = True})
+                              "interpret command argument as a date"
+
+list :: Command Options
 list = defCmd { cmdName = "list"
               , cmdHandler = liftIO listHandler
               , cmdCategory = mainCategory
@@ -383,7 +403,8 @@ listHandler = do
   stateDir <- mustStateDir rootDir
   mapM_ putStrLn =<< getSnapshots stateDir
 
-checkout :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command ()
+checkout :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+         => Command Options
 checkout = defCmd { cmdName = "checkout"
                   , cmdHandler = checkoutHandler
                   , cmdShortDesc = "checkout snapshot by name or date"
@@ -391,20 +412,24 @@ checkout = defCmd { cmdName = "checkout"
                   }
 
 checkoutHandler :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-                => App () ()
-checkoutHandler = appArgs >>= \args -> liftIO $ do
-  rootDir <- findRootDir
-  stateDir <- mustStateDir rootDir
-  manifest <- liftIO $ readManifest rootDir
-  snapshots <- getSnapshots stateDir
+                => App Options ()
+checkoutHandler = do
+  args <- appArgs
+  options <- appConfig
+  liftIO $ do
+    rootDir <- findRootDir
+    stateDir <- mustStateDir rootDir
+    manifest <- liftIO $ readManifest rootDir
+    snapshots <- getSnapshots stateDir
 
-  case parseArgs args snapshots of
-    Left date ->
-      handleDate manifest date
-    Right snapshot ->
-      handleSnapshot stateDir manifest snapshot
+    case parseArgs args options snapshots of
+      Left date ->
+        handleDate manifest date
+      Right snapshot ->
+        handleSnapshot stateDir manifest snapshot
 
-  where parseArgs args snapshots
+  where parseArgs args options snapshots
+          | forceDate options = Left snapshotOrDate
           | snapshotOrDate `elem` snapshots = Right snapshotOrDate
           | otherwise = Left snapshotOrDate
           where snapshotOrDate = unwords args
@@ -425,7 +450,7 @@ checkoutHandler = appArgs >>= \args -> liftIO $ do
         warn :: String -> IO ()
         warn = hPutStrLn stderr . ("Warning: " ++)
 
-foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command ()
+foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command Options
 foo = defCmd { cmdName = "foo"
              , cmdHandler = liftIO fooHandler
              , cmdShortDesc = "foo short desc"
@@ -481,5 +506,5 @@ fooHandler = do
     threadDelay 10000000
 
 main :: IO ()
-main = appMain app
+main = appMainWithOptions app
   where ?factory = lgFactory
