@@ -391,12 +391,8 @@ checkout = defCmd { cmdName = "checkout"
 checkoutHandler :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
                 => App () ()
 checkoutHandler = do
-  args <- appArgs
-  case args of
-    [snapshotOrDate] ->
-      go snapshotOrDate
-    _ ->
-      error "bad arguments"
+  snapshotOrDate <- unwords <$> appArgs
+  go snapshotOrDate
 
   where go snapshotOrDate = do
           (snapshots, manifest) <- liftIO $ do
