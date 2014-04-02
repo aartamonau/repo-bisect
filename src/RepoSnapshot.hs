@@ -392,19 +392,23 @@ checkout = defCmd { cmdName = "checkout"
 
 checkoutHandler :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
                 => App () ()
-checkoutHandler = do
-  snapshotOrDate <- unwords <$> appArgs
-  go snapshotOrDate
+checkoutHandler = appArgs >>= \args -> liftIO $ do
+  rootDir <- findRootDir
+  stateDir <- mustStateDir rootDir
+  manifest <- liftIO $ readManifest rootDir
+  snapshots <- getSnapshots stateDir
 
-  where go snapshotOrDate = do
-          rootDir <- liftIO findRootDir
-          stateDir <- liftIO $ mustStateDir rootDir
-          manifest <- liftIO $ readManifest rootDir
-          snapshots <- liftIO $ getSnapshots stateDir
+  case parseArgs args snapshots of
+    Left date ->
+      handleDate manifest date
+    Right snapshot ->
+      handleSnapshot stateDir manifest snapshot
 
-          if snapshotOrDate `elem` snapshots
-            then handleSnapshot stateDir manifest snapshotOrDate
-            else handleDate manifest snapshotOrDate
+  where parseArgs ("--" : args) _ = Left $ unwords args
+        parseArgs args snapshots
+          | snapshotOrDate `elem` snapshots = Right snapshotOrDate
+          | otherwise = Left snapshotOrDate
+          where snapshotOrDate = unwords args
 
         handleSnapshot stateDir manifest snapshot = liftIO $
               checkoutSnapshot =<< readSnapshot stateDir snapshot projects
