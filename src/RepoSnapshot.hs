@@ -223,6 +223,11 @@ readSnapshotFile path projects = do
                                   ++ path ++ " : " ++ Text.unpack needle
           where p proj = name proj == needle
 
+readSnapshot :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+             => String -> String -> [Project] -> IO (Snapshot r)
+readSnapshot stateDir name projects =
+  readSnapshotFile (combine (snapshotsDir stateDir) name) projects
+
 saveHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
           => FilePath -> [Project] -> IO ()
 saveHeads stateDir projects = do
