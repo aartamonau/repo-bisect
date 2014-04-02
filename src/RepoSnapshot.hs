@@ -201,9 +201,9 @@ saveSnapshot path projects =
   where oneLine (Project {name}, ref) =
           Text.concat [renderRef ref, " ", name, "\n"]
 
-readSnapshot :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-             => FilePath -> [Project] -> IO (Snapshot r)
-readSnapshot path projects = do
+readSnapshotFile :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+                 => FilePath -> [Project] -> IO (Snapshot r)
+readSnapshotFile path projects = do
   content <- Text.readFile path
 
   fmap Snapshot $ forM (map decodeLine $ Text.lines content) $ \(ref, name) -> do
@@ -230,7 +230,7 @@ saveHeads stateDir projects = do
 
 readHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
           => FilePath -> [Project] -> IO (Snapshot r)
-readHeads stateDir = readSnapshot (headsPath stateDir)
+readHeads stateDir = readSnapshotFile (headsPath stateDir)
 
 checkoutRef :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
 checkoutRef (Project {path}) ref =
