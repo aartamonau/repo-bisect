@@ -1,6 +1,6 @@
-name:                repo-utils
+name:                repo-bisect
 version:             0.1.0.0
-homepage:            https://github.com/aartamonau/repo-utils
+homepage:            https://github.com/aartamonau/repo-bisect
 license:             GPL-3
 license-file:        LICENSE
 author:              Aliaksey Artamonau
