@@ -147,7 +147,7 @@ renderRef (RefSymbolic sym) = sym
 
 onGitException :: MonadBaseControl IO m => m a -> m a -> m a
 onGitException body what =
-  control $ \run -> run body `catch` \ (_ ::GitException) -> run what
+  control $ \run -> run body `catch` \ (_ :: GitException) -> run what
 
 parseSHA :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
          => Text -> RM n (Maybe (RefTarget r))
