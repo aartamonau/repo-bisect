@@ -407,7 +407,7 @@ checkout :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
          => Command Options
 checkout = defCmd { cmdName = "checkout"
                   , cmdHandler = checkoutHandler
-                  , cmdShortDesc = "checkout snapshot by name or date"
+                  , cmdShortDesc = "Checkout snapshot by name or date"
                   , cmdCategory = mainCategory
                   }
 
