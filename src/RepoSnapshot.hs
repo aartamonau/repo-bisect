@@ -450,6 +450,18 @@ checkoutHandler = do
         warn :: String -> IO ()
         warn = hPutStrLn stderr . ("Warning: " ++)
 
+save :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+     => Command Options
+save = defCmd { cmdName = "save"
+              , cmdHandler = saveHandler
+              , cmdShortDesc = "save current state of all projects"
+              , cmdCategory = mainCategory
+              }
+
+saveHandler :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+            => App Options ()
+saveHandler = undefined
+
 foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command Options
 foo = defCmd { cmdName = "foo"
              , cmdHandler = liftIO fooHandler
