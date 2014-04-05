@@ -226,10 +226,12 @@ readSnapshotFile path projects = do
                                   ++ path ++ " : " ++ Text.unpack needle
           where p proj = name proj == needle
 
+snapshotPath :: FilePath -> String -> FilePath
+snapshotPath stateDir = combine (snapshotsDir stateDir)
+
 readSnapshot :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
              => FilePath -> String -> [Project] -> IO (Snapshot r)
-readSnapshot stateDir name =
-  readSnapshotFile (combine (snapshotsDir stateDir) name)
+readSnapshot stateDir = readSnapshotFile . snapshotPath stateDir
 
 checkoutRef :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
 checkoutRef (Project {path}) ref =
