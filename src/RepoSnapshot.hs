@@ -390,7 +390,7 @@ app = def' { appName = "repo-snapshot"
 options :: [OptDescr (Options -> Options)]
 options = [forceDateOpt]
   where forceDateOpt = Option "d" ["--force-date"]
-                              (NoArg $ \opts -> opts { forceDate = True})
+                              (NoArg $ \opts -> opts { forceDate = True })
                               "interpret command argument as a date"
 
 list :: Command Options
