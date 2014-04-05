@@ -197,8 +197,8 @@ toFullSnapshot = Snapshot . map (second fromJust) . filter (isJust . snd)
 snapshotProjects :: Snapshot r -> [Project]
 snapshotProjects = fst . unzip . unSnapshot
 
-saveSnapshot :: IsOid (Oid r) => FilePath -> Snapshot r -> IO ()
-saveSnapshot path projects =
+saveSnapshotFile :: IsOid (Oid r) => FilePath -> Snapshot r -> IO ()
+saveSnapshotFile path projects =
   Text.writeFile path $ Text.concat (map oneLine $ unSnapshot projects)
 
   where oneLine (Project {name}, ref) =
@@ -484,7 +484,7 @@ fooHandler = do
 
     let projects = snapshotProjects manifest
 
-    saveSnapshot (headsPath stateDir) =<< getHeadsSnapshot projects
+    saveSnapshotFile (headsPath stateDir) =<< getHeadsSnapshot projects
     heads <- readSnapshotFile (headsPath stateDir) projects
 
     putStrLn "projects: "
