@@ -419,7 +419,7 @@ checkoutHandler = do
   liftIO $ do
     rootDir <- findRootDir
     stateDir <- mustStateDir rootDir
-    manifest <- liftIO $ readManifest rootDir
+    manifest <- readManifest rootDir
     snapshots <- getSnapshots stateDir
 
     case parseArgs args options snapshots of
