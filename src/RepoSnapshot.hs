@@ -179,7 +179,7 @@ parseRef ref = do
 
   where trySymName =
           lift $
-            (do lookupReference ref
+            (do _ <- evaluate <$> lookupReference ref
                 return $ Just (RefSymbolic ref)) `onGitException` return Nothing
 
 headsPath :: FilePath -> FilePath
