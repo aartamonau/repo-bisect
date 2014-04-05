@@ -6,6 +6,7 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 -- to give a Show instance to Snapshot r
 {-# LANGUAGE UndecidableInstances #-}
@@ -40,6 +41,9 @@ import System.FilePath (combine, takeDirectory)
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 
 import System.IO (stderr, hPutStrLn)
+
+import Text.RawString.QQ (r)
+import Text.Regex.Posix ((=~))
 
 import Text.XML.Light (QName(QName), parseXMLDoc, findElement,
                        findChild, findChildren, findAttr)
@@ -362,6 +366,11 @@ mustParseDate date = do
   parsed <- fmap posixToUTC <$> io_approxidate date
   return $ fromMaybe (error $ "can't recognize date \"" ++ date ++ "\"") parsed
 
+isValidSnapshotName :: String -> Bool
+isValidSnapshotName name = not $ name =~ regexp
+  where regexp :: String
+        regexp = [r|^\.|\.\.|[\/:~^[:cntrl:][:space:]]|]
+
 mainCategory :: String
 mainCategory = "Working with snapshots"
 
@@ -486,6 +495,9 @@ saveHandler = do
         stateDir <- mustStateDir rootDir
         projects <- snapshotProjects <$> readManifest rootDir
         snapshots <- getSnapshots stateDir
+
+        unless (isValidSnapshotName name) $
+          error $ "invalid snapshot name '" ++ name ++ "'"
 
         when (name `elem` snapshots && not (overwriteSnapshot options)) $
           error $ "snapshot '" ++ name ++ "' already exists"
