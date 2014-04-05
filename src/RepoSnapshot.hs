@@ -227,7 +227,7 @@ readSnapshotFile path projects = do
           where p proj = name proj == needle
 
 readSnapshot :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-             => String -> String -> [Project] -> IO (Snapshot r)
+             => FilePath -> String -> [Project] -> IO (Snapshot r)
 readSnapshot stateDir name =
   readSnapshotFile (combine (snapshotsDir stateDir) name)
 
