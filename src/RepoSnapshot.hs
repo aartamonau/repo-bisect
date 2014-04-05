@@ -362,10 +362,14 @@ mustParseDate date = do
 mainCategory :: String
 mainCategory = "Working with snapshots"
 
-data Options = Options { forceDate :: Bool }
+data Options = Options { forceDate :: Bool
+                       , overwriteSnapshot :: Bool
+                       }
 
 instance Default Options where
-  def = Options { forceDate = False }
+  def = Options { forceDate = False
+                , overwriteSnapshot = False
+                }
 
 app :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
     => Application (Options -> Options) Options
@@ -388,10 +392,15 @@ app = def' { appName = "repo-snapshot"
         def' = def
 
 options :: [OptDescr (Options -> Options)]
-options = [forceDateOpt]
+options = [ forceDateOpt
+          , overwriteSnapshot
+          ]
   where forceDateOpt = Option "d" ["--force-date"]
                               (NoArg $ \opts -> opts { forceDate = True })
                               "interpret command argument as a date"
+        overwriteSnapshot = Option "F" ["--overwrite-snapshot"]
+                              (NoArg $ \opts -> opts { overwriteSnapshot = True })
+                              "overwrite snapshot if it already exists"
 
 list :: Command Options
 list = defCmd { cmdName = "list"
@@ -465,6 +474,8 @@ saveHandler :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
             => App Options ()
 saveHandler = do
   args <- appArgs
+  options <- appConfig
+
   case args of
     [name] ->
       liftIO $ do
@@ -473,7 +484,7 @@ saveHandler = do
         projects <- snapshotProjects <$> readManifest rootDir
         snapshots <- getSnapshots stateDir
 
-        when (name `elem` snapshots) $
+        when (name `elem` snapshots && not (overwriteSnapshot options)) $
           error $ "snapshot '" ++ name ++ "' already exists"
 
         saveSnapshotByName stateDir name =<< getHeadsSnapshot projects
