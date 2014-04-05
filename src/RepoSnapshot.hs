@@ -134,9 +134,9 @@ withProject :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
             => Project -> RM n a -> IO a
 withProject proj k = withRepository ?factory (path proj) $ runReaderT k proj
 
-readProjectHead :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-                => Project -> IO (RefTarget r)
-readProjectHead proj =
+getProjectHead :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+               => Project -> IO (RefTarget r)
+getProjectHead proj =
   withProject proj $ do
     ref <- lift $ lookupReference "HEAD"
     return $ fromMaybe (error $ "could not resolve HEAD of " ++ path proj) ref
@@ -229,7 +229,7 @@ readSnapshot stateDir name =
 saveHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
           => FilePath -> [Project] -> IO ()
 saveHeads stateDir projects = do
-  heads <- liftIO $ mapM readProjectHead projects
+  heads <- liftIO $ mapM getProjectHead projects
   saveSnapshot (headsPath stateDir) (Snapshot $ zip projects heads)
 
 readHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
