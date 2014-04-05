@@ -373,7 +373,7 @@ app = def' { appName = "repo-snapshot"
            , appLongDesc = "long description"
            , appProject = "repo-utils"
            , appCategories = ["foo", mainCategory]
-           , appCmds = [list, checkout, foo]
+           , appCmds = [list, checkout, save, foo]
            , appBugEmail = "aliaksiej.artamonau@gmail.com"
            , appOptions = options
            , appProcessConfig = processConfig
@@ -460,7 +460,23 @@ save = defCmd { cmdName = "save"
 
 saveHandler :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
             => App Options ()
-saveHandler = undefined
+saveHandler = do
+  args <- appArgs
+  case args of
+    [name] ->
+      liftIO $ do
+        rootDir <- findRootDir
+        stateDir <- mustStateDir rootDir
+        projects <- snapshotProjects <$> readManifest rootDir
+        snapshots <- getSnapshots stateDir
+
+        when (name `elem` snapshots) $
+          error $ "snapshot '" ++ name ++ "' already exists"
+
+        saveSnapshotByName stateDir name =<< getHeadsSnapshot projects
+    _ ->
+      -- TODO: would be helpful to be able to show help here
+      error "bad arguments"
 
 foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command Options
 foo = defCmd { cmdName = "foo"
