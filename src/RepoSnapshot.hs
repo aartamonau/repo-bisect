@@ -229,9 +229,9 @@ readSnapshotFile path projects = do
 snapshotPath :: FilePath -> String -> FilePath
 snapshotPath stateDir = combine (snapshotsDir stateDir)
 
-readSnapshot :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-             => FilePath -> String -> [Project] -> IO (Snapshot r)
-readSnapshot stateDir = readSnapshotFile . snapshotPath stateDir
+readSnapshotByName :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+                   => FilePath -> String -> [Project] -> IO (Snapshot r)
+readSnapshotByName stateDir = readSnapshotFile . snapshotPath stateDir
 
 checkoutRef :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
 checkoutRef (Project {path}) ref =
@@ -432,7 +432,7 @@ checkoutHandler = do
           where snapshotOrDate = unwords args
 
         handleSnapshot stateDir manifest snapshot = liftIO $
-              checkoutSnapshot =<< readSnapshot stateDir snapshot projects
+              checkoutSnapshot =<< readSnapshotByName stateDir snapshot projects
           where projects = snapshotProjects manifest
 
         handleDate manifest date = liftIO $ do
