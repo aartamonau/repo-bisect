@@ -141,6 +141,11 @@ getProjectHead proj =
     ref <- lift $ lookupReference "HEAD"
     return $ fromMaybe (error $ "could not resolve HEAD of " ++ path proj) ref
 
+getHeadsSnapshot :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+                 => [Project] -> IO (Snapshot r)
+getHeadsSnapshot projects =
+  Snapshot . zip projects <$> mapM getProjectHead projects
+
 renderRef :: (IsOid (Oid r)) => RefTarget r -> Text
 renderRef (RefObj obj) = renderOid obj
 renderRef (RefSymbolic sym) = sym
@@ -225,16 +230,6 @@ readSnapshot :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
              => String -> String -> [Project] -> IO (Snapshot r)
 readSnapshot stateDir name =
   readSnapshotFile (combine (snapshotsDir stateDir) name)
-
-saveHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-          => FilePath -> [Project] -> IO ()
-saveHeads stateDir projects = do
-  heads <- liftIO $ mapM getProjectHead projects
-  saveSnapshot (headsPath stateDir) (Snapshot $ zip projects heads)
-
-readHeads :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-          => FilePath -> [Project] -> IO (Snapshot r)
-readHeads stateDir = readSnapshotFile (headsPath stateDir)
 
 checkoutRef :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
 checkoutRef (Project {path}) ref =
@@ -487,8 +482,8 @@ fooHandler = do
 
     let projects = snapshotProjects manifest
 
-    saveHeads stateDir projects
-    heads <- readHeads stateDir projects
+    saveSnapshot (headsPath stateDir) =<< getHeadsSnapshot projects
+    heads <- readSnapshotFile (headsPath stateDir) projects
 
     putStrLn "projects: "
     forM_ (unSnapshot heads) $ \(p@(Project {name, path}), head) -> do
