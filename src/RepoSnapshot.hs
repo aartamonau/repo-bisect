@@ -177,7 +177,10 @@ parseRef ref = do
     (error $ "could not resolve " ++ Text.unpack ref
              ++ " at " ++ path proj) finalRef
 
-  where trySymName = lift $ lookupReference ref `onGitException` return Nothing
+  where trySymName =
+          lift $
+            (do lookupReference ref
+                return $ Just (RefSymbolic ref)) `onGitException` return Nothing
 
 headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
