@@ -34,7 +34,7 @@ import Data.Time.Git (io_approxidate, posixToUTC)
 
 import System.Directory (getCurrentDirectory, canonicalizePath,
                          doesDirectoryExist, doesFileExist, createDirectory,
-                         getDirectoryContents)
+                         getDirectoryContents, removeFile)
 import System.FilePath (combine, takeDirectory)
 
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
@@ -238,6 +238,9 @@ readSnapshotByName stateDir = readSnapshotFile . snapshotPath stateDir
 
 saveSnapshotByName :: IsOid (Oid r) => FilePath -> String -> Snapshot r -> IO ()
 saveSnapshotByName stateDir = saveSnapshotFile . snapshotPath stateDir
+
+removeSnapshotByName :: FilePath -> String -> IO ()
+removeSnapshotByName stateDir = removeFile . snapshotPath stateDir
 
 checkoutRef :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
 checkoutRef (Project {path}) ref =
