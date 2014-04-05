@@ -383,7 +383,7 @@ app = def' { appName = "repo-snapshot"
            , appLongDesc = "long description"
            , appProject = "repo-utils"
            , appCategories = ["foo", mainCategory]
-           , appCmds = [list, checkout, save, foo]
+           , appCmds = [list, checkout, save, delete, foo]
            , appBugEmail = "aliaksiej.artamonau@gmail.com"
            , appOptions = options
            , appProcessConfig = processConfig
@@ -491,6 +491,34 @@ saveHandler = do
           error $ "snapshot '" ++ name ++ "' already exists"
 
         saveSnapshotByName stateDir name =<< getHeadsSnapshot projects
+    _ ->
+      -- TODO: would be helpful to be able to show help here
+      error "bad arguments"
+
+delete :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+       => Command Options
+delete = defCmd { cmdName = "delete"
+                , cmdHandler = deleteHandler
+                , cmdShortDesc = "delete named snapshot"
+                , cmdCategory = mainCategory
+                }
+
+deleteHandler :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+              => App Options ()
+deleteHandler = do
+  args <- appArgs
+
+  case args of
+    [name] ->
+      liftIO $ do
+        rootDir <- findRootDir
+        stateDir <- mustStateDir rootDir
+        snapshots <- getSnapshots stateDir
+
+        unless (name `elem` snapshots) $
+          error $ "unknown snapshot '" ++ name ++ "'"
+
+        removeSnapshotByName stateDir name
     _ ->
       -- TODO: would be helpful to be able to show help here
       error "bad arguments"
