@@ -233,6 +233,9 @@ readSnapshotByName :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
                    => FilePath -> String -> [Project] -> IO (Snapshot r)
 readSnapshotByName stateDir = readSnapshotFile . snapshotPath stateDir
 
+saveSnapshotByName :: IsOid (Oid r) => FilePath -> String -> Snapshot r -> IO ()
+saveSnapshotByName stateDir = saveSnapshotFile . snapshotPath stateDir
+
 checkoutRef :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
 checkoutRef (Project {path}) ref =
   shelly $ silently $ do
