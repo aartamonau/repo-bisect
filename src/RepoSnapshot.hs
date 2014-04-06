@@ -183,6 +183,17 @@ parseRef ref = do
             (do _ <- evaluate <$> lookupReference ref
                 return $ Just (RefSymbolic ref)) `onGitException` return Nothing
 
+resolveRef :: FactoryConstraints n r => RefTarget r -> RM n (Oid r)
+resolveRef ref = do
+  maybeOid <- lift $ referenceToOid ref
+  maybe err return maybeOid
+
+  where err = do
+          proj <- ask
+          error $ "could not resolve "
+            ++ Text.unpack (renderRef ref)
+            ++ " in project '" ++ Text.unpack (name proj) ++ "'"
+
 headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
 
@@ -262,16 +273,10 @@ findCommit :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
            => Project -> RefTarget r -> (Commit r -> Bool) -> IO (Maybe (Commit r))
 findCommit proj head p =
   withProject proj $ do
-    headCommitOid <- oidToCommitOid <$> resolve head
+    headCommitOid <- oidToCommitOid <$> resolveRef head
     go headCommitOid
 
-  where resolve ref = do
-          maybeOid <- lift $ referenceToOid ref
-          return $
-            fromMaybe (error $ "could not resolve "
-                       ++ Text.unpack (renderRef ref) ++ " at " ++ path proj) maybeOid
-
-        go cid = do
+  where go cid = do
           commit <- lift $ lookupCommit cid
           if p commit
             then return $ Just commit
