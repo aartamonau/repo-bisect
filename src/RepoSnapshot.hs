@@ -72,9 +72,9 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
 
 import Control.Monad.Trans.Control (MonadBaseControl, control)
 
-type FactoryConstraints n r = (MonadGit r n, MonadBaseControl IO n)
-
+type Gitty n r = (MonadGit r n, MonadBaseControl IO n)
 type RepoFactory n r = RepositoryFactory n IO r
+type WithFactory n r = (Gitty n r, ?factory :: RepoFactory n r)
 
 repoDirName :: FilePath
 repoDirName = ".repo"
@@ -135,19 +135,16 @@ data Project = Project { name :: Text
 
 type RM m a = ReaderT Project m a
 
-withProject :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-            => Project -> RM n a -> IO a
+withProject :: WithFactory n r => Project -> RM n a -> IO a
 withProject proj k = withRepository ?factory (path proj) $ runReaderT k proj
 
-getProjectHead :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-               => Project -> IO (RefTarget r)
+getProjectHead :: WithFactory n r => Project -> IO (RefTarget r)
 getProjectHead proj =
   withProject proj $ do
     ref <- lift $ lookupReference "HEAD"
     return $ fromMaybe (error $ "could not resolve HEAD of " ++ path proj) ref
 
-getHeadsSnapshot :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-                 => [Project] -> IO (Snapshot r)
+getHeadsSnapshot :: WithFactory n r => [Project] -> IO (Snapshot r)
 getHeadsSnapshot projects =
   Snapshot . zip projects <$> mapM getProjectHead projects
 
@@ -159,17 +156,17 @@ onGitException :: MonadBaseControl IO m => m a -> m a -> m a
 onGitException body what =
   control $ \run -> run body `catch` \ (_ :: GitException) -> run what
 
-parseSHA :: FactoryConstraints n r => Text -> RM n (Maybe (RefTarget r))
+parseSHA :: Gitty n r => Text -> RM n (Maybe (RefTarget r))
 parseSHA ref =
   (do oid <- lift $ parseOid ref
       _ <- lift $ lookupCommit (oidToCommitOid oid)
       return $ Just (RefObj oid))
   `onGitException` return Nothing
 
-isSHA :: FactoryConstraints n r => Text -> RM n Bool
+isSHA :: Gitty n r => Text -> RM n Bool
 isSHA ref = isJust <$> parseSHA ref
 
-parseRef :: FactoryConstraints n r => Text -> RM n (RefTarget r)
+parseRef :: Gitty n r => Text -> RM n (RefTarget r)
 parseRef ref = do
   shaRef <- parseSHA ref
   finalRef <- maybe trySymName (return . Just) shaRef
@@ -184,7 +181,7 @@ parseRef ref = do
             (do _ <- evaluate <$> lookupReference ref
                 return $ Just (RefSymbolic ref)) `onGitException` return Nothing
 
-resolveRef :: FactoryConstraints n r => RefTarget r -> RM n (Oid r)
+resolveRef :: Gitty n r => RefTarget r -> RM n (Oid r)
 resolveRef ref = do
   maybeOid <- lift $ referenceToOid ref
   maybe err return maybeOid
@@ -195,7 +192,7 @@ resolveRef ref = do
             ++ Text.unpack (renderRef ref)
             ++ " in project '" ++ Text.unpack (name proj) ++ "'"
 
-refTree :: FactoryConstraints n r => RefTarget r -> RM n (Tree r)
+refTree :: Gitty n r => RefTarget r -> RM n (Tree r)
 refTree ref = do
   cid <- oidToCommitOid <$> resolveRef ref
   tid <- commitTree <$> lift (lookupCommit cid)
@@ -226,8 +223,7 @@ saveSnapshotFile path projects =
   where oneLine (Project {name}, ref) =
           Text.concat [renderRef ref, " ", name, "\n"]
 
-readSnapshotFile :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-                 => FilePath -> [Project] -> IO (Snapshot r)
+readSnapshotFile :: WithFactory n r => FilePath -> [Project] -> IO (Snapshot r)
 readSnapshotFile path projects = do
   mustFile path
   content <- Text.readFile path
@@ -251,7 +247,7 @@ readSnapshotFile path projects = do
 snapshotPath :: FilePath -> String -> FilePath
 snapshotPath stateDir = combine (snapshotsDir stateDir)
 
-readSnapshotByName :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+readSnapshotByName :: WithFactory n r
                    => FilePath -> String -> [Project] -> IO (Snapshot r)
 readSnapshotByName stateDir = readSnapshotFile . snapshotPath stateDir
 
@@ -276,7 +272,7 @@ checkoutSnapshot = uncurry (zipWithM_ checkoutRef) . unzip . unSnapshot
 oidToCommitOid :: Oid r -> CommitOid r
 oidToCommitOid = Tagged
 
-findCommit :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+findCommit :: WithFactory n r
            => Project -> RefTarget r -> (Commit r -> Bool) -> IO (Maybe (Commit r))
 findCommit proj head p =
   withProject proj $ do
@@ -292,14 +288,13 @@ findCommit proj head p =
                 [] -> return Nothing
                 (first : _) -> go first
 
-findCommitByDate :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-                 => Project -> RefTarget r -> UTCTime
-                 -> IO (Maybe (Commit r))
+findCommitByDate :: WithFactory n r
+                 => Project -> RefTarget r -> UTCTime -> IO (Maybe (Commit r))
 findCommitByDate proj head date = findCommit proj head p
   where p commit = zonedTimeToUTC (signatureWhen committer) <= date
           where committer = commitCommitter commit
 
-snapshotByDate :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
+snapshotByDate :: WithFactory n r
                => Snapshot r -> UTCTime -> IO (PartialSnapshot r)
 snapshotByDate heads date =
   forM (unSnapshot heads) $ \(p, head) -> do
@@ -311,8 +306,7 @@ getSnapshots stateDir =
   filterM (doesFileExist . combine dir) =<< getDirectoryContents dir
   where dir = snapshotsDir stateDir
 
-readManifest :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-             => FilePath -> IO (Snapshot r)
+readManifest :: WithFactory n r => FilePath -> IO (Snapshot r)
 readManifest rootDir = do
   mustFile manifestPath
   doc <- parseXMLDoc <$> readFile manifestPath
@@ -392,8 +386,7 @@ instance Default Options where
                 , overwriteSnapshot = False
                 }
 
-app :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-    => Application (Options -> Options) Options
+app :: WithFactory n r => Application (Options -> Options) Options
 app = def' { appName = "repo-snapshot"
            , appVersion = "0.1"
            , appAuthors = ["Aliaksey Artamonau <aliaksiej.artamonau@gmail.com>"]
@@ -436,16 +429,14 @@ listHandler = do
   stateDir <- mustStateDir rootDir
   mapM_ putStrLn =<< getSnapshots stateDir
 
-checkout :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-         => Command Options
+checkout :: WithFactory n r => Command Options
 checkout = defCmd { cmdName = "checkout"
                   , cmdHandler = checkoutHandler
                   , cmdShortDesc = "Checkout snapshot by name or date"
                   , cmdCategory = mainCategory
                   }
 
-checkoutHandler :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-                => App Options ()
+checkoutHandler :: WithFactory n r => App Options ()
 checkoutHandler = do
   args <- appArgs
   options <- appConfig
@@ -483,16 +474,14 @@ checkoutHandler = do
         warn :: String -> IO ()
         warn = hPutStrLn stderr . ("Warning: " ++)
 
-save :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-     => Command Options
+save :: WithFactory n r => Command Options
 save = defCmd { cmdName = "save"
               , cmdHandler = saveHandler
               , cmdShortDesc = "save current state of all projects"
               , cmdCategory = mainCategory
               }
 
-saveHandler :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-            => App Options ()
+saveHandler :: WithFactory n r => App Options ()
 saveHandler = do
   args <- appArgs
   options <- appConfig
@@ -516,16 +505,14 @@ saveHandler = do
       -- TODO: would be helpful to be able to show help here
       error "bad arguments"
 
-delete :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-       => Command Options
+delete :: WithFactory n r => Command Options
 delete = defCmd { cmdName = "delete"
                 , cmdHandler = deleteHandler
                 , cmdShortDesc = "delete named snapshot"
                 , cmdCategory = mainCategory
                 }
 
-deleteHandler :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-              => App Options ()
+deleteHandler :: WithFactory n r => App Options ()
 deleteHandler = do
   args <- appArgs
 
@@ -544,15 +531,14 @@ deleteHandler = do
       -- TODO: would be helpful to be able to show help here
       error "bad arguments"
 
-foo :: (FactoryConstraints n r, ?factory :: RepoFactory n r) => Command Options
+foo :: WithFactory n r => Command Options
 foo = defCmd { cmdName = "foo"
              , cmdHandler = liftIO fooHandler
              , cmdShortDesc = "foo short desc"
              , cmdCategory = "foo"
              }
 
-fooHandler :: forall n r . (FactoryConstraints n r, ?factory :: RepoFactory n r)
-           => IO ()
+fooHandler :: WithFactory n r => IO ()
 fooHandler = do
   rootDir <- findRootDir
   stateDir <- mustStateDir rootDir
