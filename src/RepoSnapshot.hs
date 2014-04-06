@@ -158,20 +158,17 @@ onGitException :: MonadBaseControl IO m => m a -> m a -> m a
 onGitException body what =
   control $ \run -> run body `catch` \ (_ :: GitException) -> run what
 
-parseSHA :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-         => Text -> RM n (Maybe (RefTarget r))
+parseSHA :: FactoryConstraints n r => Text -> RM n (Maybe (RefTarget r))
 parseSHA ref =
   (do oid <- lift $ parseOid ref
       _ <- lift $ lookupCommit (oidToCommitOid oid)
       return $ Just (RefObj oid))
   `onGitException` return Nothing
 
-isSHA :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-      => Text -> RM n Bool
+isSHA :: FactoryConstraints n r => Text -> RM n Bool
 isSHA ref = isJust <$> parseSHA ref
 
-parseRef :: (FactoryConstraints n r, ?factory :: RepoFactory n r)
-         => Text -> RM n (RefTarget r)
+parseRef :: FactoryConstraints n r => Text -> RM n (RefTarget r)
 parseRef ref = do
   shaRef <- parseSHA ref
   finalRef <- maybe trySymName (return . Just) shaRef
