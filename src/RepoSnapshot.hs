@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE Rank2Types #-}
 
 -- to give a Show instance to Snapshot r
 {-# LANGUAGE UndecidableInstances #-}
@@ -374,6 +375,11 @@ isValidSnapshotName name = not $ name =~ regexp
   where regexp :: String
         regexp = [r|^\.|\.\.|[\/:~^[:cntrl:][:space:]]|]
 
+withFactory :: Gitty n r
+            => RepoFactory n r
+            -> (WithFactory n r => a) -> a
+withFactory factory x = let ?factory = factory in x
+
 mainCategory :: String
 mainCategory = "Working with snapshots"
 
@@ -586,5 +592,4 @@ fooHandler = do
     threadDelay 10000000
 
 main :: IO ()
-main = appMainWithOptions app
-  where ?factory = lgFactory
+main = withFactory lgFactory (appMainWithOptions app)
