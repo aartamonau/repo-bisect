@@ -48,10 +48,11 @@ import Text.Regex.Posix ((=~))
 import Text.XML.Light (QName(QName), parseXMLDoc, findElement,
                        findChild, findChildren, findAttr)
 
-import Git (MonadGit(lookupCommit, lookupReference),
-            Commit(commitParents, commitOid, commitCommitter),
+import Git (MonadGit(lookupCommit, lookupReference, lookupTree),
+            Commit(commitParents, commitOid, commitCommitter, commitTree),
             Signature(signatureWhen),
             RefTarget(RefObj, RefSymbolic), Oid, CommitOid,
+            Tree,
             RepositoryFactory, IsOid,
             GitException,
             withRepository, parseOid, renderOid,
@@ -193,6 +194,12 @@ resolveRef ref = do
           error $ "could not resolve "
             ++ Text.unpack (renderRef ref)
             ++ " in project '" ++ Text.unpack (name proj) ++ "'"
+
+refTree :: FactoryConstraints n r => RefTarget r -> RM n (Tree r)
+refTree ref = do
+  cid <- oidToCommitOid <$> resolveRef ref
+  tid <- commitTree <$> lift (lookupCommit cid)
+  lift (lookupTree tid)
 
 headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
