@@ -402,11 +402,13 @@ mainCategory = "Working with snapshots"
 
 data Options = Options { forceDate :: Bool
                        , overwriteSnapshot :: Bool
+                       , resolveRefNames :: Bool
                        }
 
 instance Default Options where
   def = Options { forceDate = False
                 , overwriteSnapshot = False
+                , resolveRefNames = False
                 }
 
 app :: WithFactory n r => Application (Options -> Options) Options
@@ -431,6 +433,7 @@ app = def' { appName = "repo-snapshot"
 options :: [OptDescr (Options -> Options)]
 options = [ forceDateOpt
           , overwriteSnapshot
+          , resolveRefNames
           ]
   where forceDateOpt = Option "d" ["--force-date"]
                               (NoArg $ \opts -> opts { forceDate = True })
@@ -438,6 +441,9 @@ options = [ forceDateOpt
         overwriteSnapshot = Option "F" ["--overwrite-snapshot"]
                               (NoArg $ \opts -> opts { overwriteSnapshot = True })
                               "overwrite snapshot if it already exists"
+        resolveRefNames = Option "r" ["--resolve-refnames"]
+                              (NoArg $ \opts -> opts { resolveRefNames = True })
+                              "resolve reference names before saving snapshot"
 
 list :: Command Options
 list = defCmd { cmdName = "list"
@@ -520,7 +526,12 @@ saveHandler = do
         when (name `elem` snapshots && not (overwriteSnapshot options)) $
           error $ "snapshot '" ++ name ++ "' already exists"
 
-        saveSnapshotByName stateDir name =<< getHeadsSnapshot projects
+        heads <- getHeadsSnapshot projects >>= \hs ->
+          if resolveRefNames options
+            then resolveSnapshot hs
+            else return hs
+
+        saveSnapshotByName stateDir name heads
     _ ->
       -- TODO: would be helpful to be able to show help here
       error "bad arguments"
