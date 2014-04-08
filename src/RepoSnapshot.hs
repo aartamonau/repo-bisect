@@ -419,7 +419,7 @@ app = def' { appName = "repo-snapshot"
            , appLongDesc = "long description"
            , appProject = "repo-utils"
            , appCategories = ["foo", mainCategory]
-           , appCmds = [list, checkout, save, delete, foo]
+           , appCmds = [listCmd, checkoutCmd, saveCmd, deleteCmd, fooCmd]
            , appBugEmail = "aliaksiej.artamonau@gmail.com"
            , appOptions = options
            , appProcessConfig = processConfig
@@ -445,12 +445,12 @@ options = [ forceDateOpt
                               (NoArg $ \opts -> opts { resolveRefNames = True })
                               "resolve reference names before saving snapshot"
 
-list :: Command Options
-list = defCmd { cmdName = "list"
-              , cmdHandler = liftIO listHandler
-              , cmdCategory = mainCategory
-              , cmdShortDesc = "List known snapshot"
-              }
+listCmd :: Command Options
+listCmd = defCmd { cmdName = "list"
+                 , cmdHandler = liftIO listHandler
+                 , cmdCategory = mainCategory
+                 , cmdShortDesc = "List known snapshot"
+                 }
 
 listHandler :: IO ()
 listHandler = do
@@ -458,12 +458,12 @@ listHandler = do
   stateDir <- mustStateDir rootDir
   mapM_ putStrLn =<< getSnapshots stateDir
 
-checkout :: WithFactory n r => Command Options
-checkout = defCmd { cmdName = "checkout"
-                  , cmdHandler = checkoutHandler
-                  , cmdShortDesc = "Checkout snapshot by name or date"
-                  , cmdCategory = mainCategory
-                  }
+checkoutCmd :: WithFactory n r => Command Options
+checkoutCmd = defCmd { cmdName = "checkout"
+                     , cmdHandler = checkoutHandler
+                     , cmdShortDesc = "Checkout snapshot by name or date"
+                     , cmdCategory = mainCategory
+                     }
 
 checkoutHandler :: WithFactory n r => App Options ()
 checkoutHandler = do
@@ -500,12 +500,12 @@ checkoutHandler = do
 
           tryCheckoutSnapshot (toFullSnapshot partialSnapshot)
 
-save :: WithFactory n r => Command Options
-save = defCmd { cmdName = "save"
-              , cmdHandler = saveHandler
-              , cmdShortDesc = "save current state of all projects"
-              , cmdCategory = mainCategory
-              }
+saveCmd :: WithFactory n r => Command Options
+saveCmd = defCmd { cmdName = "save"
+                 , cmdHandler = saveHandler
+                 , cmdShortDesc = "save current state of all projects"
+                 , cmdCategory = mainCategory
+                 }
 
 saveHandler :: WithFactory n r => App Options ()
 saveHandler = do
@@ -536,12 +536,12 @@ saveHandler = do
       -- TODO: would be helpful to be able to show help here
       error "bad arguments"
 
-delete :: WithFactory n r => Command Options
-delete = defCmd { cmdName = "delete"
-                , cmdHandler = deleteHandler
-                , cmdShortDesc = "delete named snapshot"
-                , cmdCategory = mainCategory
-                }
+deleteCmd :: WithFactory n r => Command Options
+deleteCmd = defCmd { cmdName = "delete"
+                   , cmdHandler = deleteHandler
+                   , cmdShortDesc = "delete named snapshot"
+                   , cmdCategory = mainCategory
+                   }
 
 deleteHandler :: WithFactory n r => App Options ()
 deleteHandler = do
@@ -562,12 +562,12 @@ deleteHandler = do
       -- TODO: would be helpful to be able to show help here
       error "bad arguments"
 
-foo :: WithFactory n r => Command Options
-foo = defCmd { cmdName = "foo"
-             , cmdHandler = liftIO fooHandler
-             , cmdShortDesc = "foo short desc"
-             , cmdCategory = "foo"
-             }
+fooCmd :: WithFactory n r => Command Options
+fooCmd = defCmd { cmdName = "foo"
+                , cmdHandler = liftIO fooHandler
+                , cmdShortDesc = "foo short desc"
+                , cmdCategory = "foo"
+                }
 
 fooHandler :: WithFactory n r => IO ()
 fooHandler = do
