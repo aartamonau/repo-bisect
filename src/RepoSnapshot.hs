@@ -197,6 +197,10 @@ resolveRef ref = do
             ++ Text.unpack (renderRef ref)
             ++ " in project '" ++ Text.unpack (name proj) ++ "'"
 
+resolveSnapshot :: WithFactory n r => Snapshot r -> IO (Snapshot r)
+resolveSnapshot = fmap Snapshot . mapM f . unSnapshot
+  where f (p, ref) = fmap (p,) (withProject p $ RefObj <$> resolveRef ref)
+
 refTree :: Gitty n r => RefTarget r -> RM n (Tree r)
 refTree ref = do
   cid <- oidToCommitOid <$> resolveRef ref
