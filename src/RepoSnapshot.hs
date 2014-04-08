@@ -77,6 +77,10 @@ type Gitty n r = (MonadGit r n, MonadBaseControl IO n)
 type RepoFactory n r = RepositoryFactory n IO r
 type WithFactory n r = (Gitty n r, ?factory :: RepoFactory n r)
 
+-- TODO: something better than this
+warn :: String -> IO ()
+warn = hPutStrLn stderr . ("Warning: " ++)
+
 repoDirName :: FilePath
 repoDirName = ".repo"
 
@@ -273,7 +277,11 @@ checkoutSnapshot = uncurry (zipWithM_ checkoutRef) . unzip . unSnapshot
 tryCheckoutSnapshot :: WithFactory n r => Snapshot r -> IO ()
 tryCheckoutSnapshot snapshot = do
   heads <- getHeadsSnapshot (snapshotProjects snapshot)
-  checkoutSnapshot snapshot `onException` checkoutSnapshot heads
+  checkoutSnapshot snapshot `onException` tryRecover heads
+
+  where tryRecover heads = do
+          warn "checkout failed; trying to roll back to previous state"
+          checkoutSnapshot heads
 
 oidToCommitOid :: Oid r -> CommitOid r
 oidToCommitOid = Tagged
@@ -481,9 +489,6 @@ checkoutHandler = do
                        ++ Text.unpack name
 
           tryCheckoutSnapshot (toFullSnapshot partialSnapshot)
-
-        warn :: String -> IO ()
-        warn = hPutStrLn stderr . ("Warning: " ++)
 
 save :: WithFactory n r => Command Options
 save = defCmd { cmdName = "save"
