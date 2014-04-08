@@ -9,9 +9,6 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE Rank2Types #-}
 
--- to give a Show instance to Snapshot r
-{-# LANGUAGE UndecidableInstances #-}
-
 import Control.Arrow (second)
 import Control.Applicative ((<$>), (<|>))
 import Control.Concurrent (threadDelay)
@@ -213,11 +210,9 @@ headsPath stateDir = combine stateDir "HEADS"
 newtype Snapshot r = Snapshot { unSnapshot :: [(Project, RefTarget r)] }
 type PartialSnapshot r = [(Project, Maybe (RefTarget r))]
 
-instance IsOid (Oid r) => Show (Snapshot r) where
-  show = concatMap showPair . unSnapshot
-    where showPair (proj, ref) =
-            Text.unpack (name proj)
-              ++ " => " ++ Text.unpack (renderRef ref) ++ "\n"
+renderSnapshot :: IsOid (Oid r) => Snapshot r -> Text
+renderSnapshot = Text.concat . map showPair . unSnapshot
+  where showPair (proj, ref) = Text.concat [name proj, " => ", renderRef ref, "\n"]
 
 toFullSnapshot :: PartialSnapshot r -> Snapshot r
 toFullSnapshot = Snapshot . map (second fromJust) . filter (isJust . snd)
@@ -590,7 +585,7 @@ showHandler = do
 
     projects <- snapshotProjects <$> readManifest root
     snapshot <- readSnapshotByName stateDir name projects
-    print snapshot
+    Text.putStrLn $ renderSnapshot snapshot
 
 fooCmd :: WithFactory n r => Command Options
 fooCmd = defCmd { cmdName = "foo"
@@ -612,7 +607,7 @@ fooHandler = do
     putStrLn $ "state directory: " ++ stateDir
 
     manifest <- readManifest rootDir
-    putStrLn $ "manifest:\n" ++ show manifest
+    putStrLn $ "manifest:\n" ++ showSnapshot manifest
 
     let projects = snapshotProjects manifest
 
@@ -634,17 +629,19 @@ fooHandler = do
     putStrLn "=================================================="
 
     yearAgoSnapshot <- toFullSnapshot <$> snapshotByDate heads yearAgo
-    putStrLn $ "one year old snapshot:\n" ++ show yearAgoSnapshot
+    putStrLn $ "one year old snapshot:\n" ++ showSnapshot yearAgoSnapshot
 
     putStrLn "=================================================="
 
     monthAgoSnapshot <- toFullSnapshot <$> snapshotByDate heads monthAgo
-    putStrLn $ "one month old snapshot:\n" ++ show monthAgoSnapshot
+    putStrLn $ "one month old snapshot:\n" ++ showSnapshot monthAgoSnapshot
 
     putStrLn "checking out one month old snapshot"
     checkoutSnapshot monthAgoSnapshot
 
     threadDelay 10000000
+
+  where showSnapshot = Text.unpack . renderSnapshot
 
 main :: IO ()
 main = withFactory lgFactory (appMainWithOptions app)
