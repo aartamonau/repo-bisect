@@ -15,7 +15,7 @@
 import Control.Arrow (second)
 import Control.Applicative ((<$>), (<|>))
 import Control.Concurrent (threadDelay)
-import Control.Exception (finally, evaluate, catch)
+import Control.Exception (finally, evaluate, catch, onException)
 import Control.Monad (forM, forM_, zipWithM_, when, unless, filterM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (ReaderT, runReaderT, ask)
@@ -270,6 +270,11 @@ checkoutRef (Project {path}) ref =
 checkoutSnapshot :: IsOid (Oid r) => Snapshot r -> IO ()
 checkoutSnapshot = uncurry (zipWithM_ checkoutRef) . unzip . unSnapshot
 
+tryCheckoutSnapshot :: WithFactory n r => Snapshot r -> IO ()
+tryCheckoutSnapshot snapshot = do
+  heads <- getHeadsSnapshot (snapshotProjects snapshot)
+  checkoutSnapshot snapshot `onException` checkoutSnapshot heads
+
 oidToCommitOid :: Oid r -> CommitOid r
 oidToCommitOid = Tagged
 
@@ -465,7 +470,7 @@ checkoutHandler = do
           where snapshotOrDate = unwords args
 
         handleSnapshot stateDir manifest snapshot = liftIO $
-              checkoutSnapshot =<< readSnapshotByName stateDir snapshot projects
+              tryCheckoutSnapshot =<< readSnapshotByName stateDir snapshot projects
           where projects = snapshotProjects manifest
 
         handleDate manifest date = liftIO $ do
@@ -475,7 +480,7 @@ checkoutHandler = do
               warn $ "couldn't find a commit matching the date in "
                        ++ Text.unpack name
 
-          checkoutSnapshot (toFullSnapshot partialSnapshot)
+          tryCheckoutSnapshot (toFullSnapshot partialSnapshot)
 
         warn :: String -> IO ()
         warn = hPutStrLn stderr . ("Warning: " ++)
