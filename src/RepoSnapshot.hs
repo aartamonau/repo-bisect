@@ -419,7 +419,8 @@ app = def' { appName = "repo-snapshot"
            , appLongDesc = "long description"
            , appProject = "repo-utils"
            , appCategories = ["foo", mainCategory]
-           , appCmds = [listCmd, checkoutCmd, saveCmd, deleteCmd, fooCmd]
+           , appCmds = [listCmd, checkoutCmd, saveCmd,
+                        deleteCmd, showCmd, fooCmd]
            , appBugEmail = "aliaksiej.artamonau@gmail.com"
            , appOptions = options
            , appProcessConfig = processConfig
@@ -571,6 +572,25 @@ deleteHandler = do
     rootDir <- findRootDir
     stateDir <- mustStateDir rootDir
     removeSnapshotByName stateDir name
+
+showCmd :: WithFactory n r => Command Options
+showCmd = defCmd { cmdName = "show"
+                 , cmdHandler = showHandler
+                 , cmdShortDesc = "show snapshot"
+                 , cmdCategory = mainCategory
+                 }
+
+showHandler :: WithFactory n r => App Options ()
+showHandler = do
+  name <- argsExistingSnapshot
+
+  liftIO $ do
+    root <- findRootDir
+    stateDir <- mustStateDir root
+
+    projects <- snapshotProjects <$> readManifest root
+    snapshot <- readSnapshotByName stateDir name projects
+    print snapshot
 
 fooCmd :: WithFactory n r => Command Options
 fooCmd = defCmd { cmdName = "foo"
