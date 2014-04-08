@@ -445,6 +445,26 @@ options = [ forceDateOpt
                               (NoArg $ \opts -> opts { resolveRefNames = True })
                               "resolve reference names before saving snapshot"
 
+argsExistingSnapshot :: App Options String
+argsExistingSnapshot = do
+  args <- appArgs
+
+  case args of
+    [name] ->
+      liftIO $ do
+        rootDir <- findRootDir
+        stateDir <- mustStateDir rootDir
+
+        snapshots <- getSnapshots stateDir
+
+        unless (name `elem` snapshots) $
+          error $ "unknown snapshot '" ++ name ++ "'"
+
+        return name
+    _ ->
+      -- TODO: would be helpful to be able to show help here
+      error "bad arguments"
+
 listCmd :: Command Options
 listCmd = defCmd { cmdName = "list"
                  , cmdHandler = liftIO listHandler
@@ -545,22 +565,12 @@ deleteCmd = defCmd { cmdName = "delete"
 
 deleteHandler :: WithFactory n r => App Options ()
 deleteHandler = do
-  args <- appArgs
+  name <- argsExistingSnapshot
 
-  case args of
-    [name] ->
-      liftIO $ do
-        rootDir <- findRootDir
-        stateDir <- mustStateDir rootDir
-        snapshots <- getSnapshots stateDir
-
-        unless (name `elem` snapshots) $
-          error $ "unknown snapshot '" ++ name ++ "'"
-
-        removeSnapshotByName stateDir name
-    _ ->
-      -- TODO: would be helpful to be able to show help here
-      error "bad arguments"
+  liftIO $ do
+    rootDir <- findRootDir
+    stateDir <- mustStateDir rootDir
+    removeSnapshotByName stateDir name
 
 fooCmd :: WithFactory n r => Command Options
 fooCmd = defCmd { cmdName = "foo"
