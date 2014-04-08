@@ -211,8 +211,13 @@ newtype Snapshot r = Snapshot { unSnapshot :: [(Project, RefTarget r)] }
 type PartialSnapshot r = [(Project, Maybe (RefTarget r))]
 
 renderSnapshot :: IsOid (Oid r) => Snapshot r -> Text
-renderSnapshot = Text.concat . map showPair . unSnapshot
-  where showPair (proj, ref) = Text.concat [name proj, " => ", renderRef ref, "\n"]
+renderSnapshot (Snapshot ps) = Text.intercalate "\n" (map renderPair ps)
+  where width = maximum $ map (Text.length . name . fst) ps
+        renderPair (proj, ref) = Text.concat [name proj,
+                                              Text.replicate (width - n) " ",
+                                              " ",
+                                              renderRef ref]
+          where n = Text.length $ name proj
 
 toFullSnapshot :: PartialSnapshot r -> Snapshot r
 toFullSnapshot = Snapshot . map (second fromJust) . filter (isJust . snd)
