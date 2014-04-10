@@ -9,7 +9,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE Rank2Types #-}
 
-import Control.Arrow (second)
+import Control.Arrow ((***), second)
 import Control.Applicative ((<$>), (<|>))
 import Control.Concurrent (threadDelay)
 import Control.Exception (finally, evaluate, catch, onException)
@@ -19,7 +19,8 @@ import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.Trans (lift)
 
 import Data.Default (Default(def))
-import Data.List (find)
+import Data.Generics (everywhere, mkT)
+import Data.List (find, sort)
 import Data.Maybe (fromMaybe, fromJust, isJust, isNothing)
 import Data.String (fromString)
 import Data.Tagged (Tagged(Tagged))
@@ -43,8 +44,12 @@ import System.IO (stderr, hPutStrLn)
 import Text.RawString.QQ (r)
 import Text.Regex.Posix ((=~))
 
-import Text.XML.Light (QName(QName), parseXMLDoc, findElement,
-                       findChild, findChildren, findAttr)
+import Text.XML.Light (QName(QName),
+                       Element(elName, elAttribs),
+                       Attr(Attr, attrKey, attrVal),
+                       parseXMLDoc, findElement, blank_element,
+                       findChild, findChildren, findAttr,
+                       showTopElement)
 
 import Git (MonadGit(lookupCommit, lookupReference, lookupTree),
             Commit(commitParents, commitOid, commitCommitter, commitTree),
@@ -386,6 +391,26 @@ readManifest_ rootDir = do
 readManifest :: WithFactory n r => FilePath -> IO (Snapshot r)
 readManifest = fmap snd . readManifest_
 
+snapshotManifest :: IsOid (Oid r) => Snapshot r -> Element -> Element
+snapshotManifest s = everywhere (mkT go)
+  where projects = map (Text.unpack . name *** renderRef) (unSnapshot s)
+
+        go :: Element -> Element
+        go x | QName "project" _ _ <- elName x = goProject x
+             | otherwise = x
+
+        goProject x | Just ref <- maybeRef = x {elAttribs = sort $ rev ref : attrs'}
+                    | otherwise = blank_element
+          where mkName name = QName name Nothing Nothing
+                maybeName = findAttr (mkName "name") x
+                maybeRef = maybeName >>= \n -> lookup n projects
+
+                attrs' = filter p (elAttribs x)
+                  where p x = mkName "revision" /= attrKey x
+                rev ref = Attr { attrKey = mkName "revision"
+                               , attrVal = Text.unpack ref
+                               }
+
 mustParseDate :: String -> IO UTCTime
 mustParseDate date = do
   parsed <- fmap posixToUTC <$> io_approxidate date
@@ -424,7 +449,7 @@ app = def' { appName = "repo-snapshot"
            , appProject = "repo-utils"
            , appCategories = ["foo", mainCategory]
            , appCmds = [listCmd, checkoutCmd, saveCmd,
-                        deleteCmd, showCmd, fooCmd]
+                        deleteCmd, showCmd, exportCmd, fooCmd]
            , appBugEmail = "aliaksiej.artamonau@gmail.com"
            , appOptions = options
            , appProcessConfig = processConfig
@@ -595,6 +620,25 @@ showHandler = do
     projects <- snapshotProjects <$> readManifest root
     snapshot <- readSnapshotByName stateDir name projects
     Text.putStrLn $ renderSnapshot snapshot
+
+exportCmd :: WithFactory n r => Command Options
+exportCmd = defCmd { cmdName = "export"
+                   , cmdHandler = exportHandler
+                   , cmdShortDesc = "export snapshot as manifest"
+                   , cmdCategory = mainCategory
+                   }
+
+exportHandler :: WithFactory n r => App Options ()
+exportHandler = do
+  name <- argsExistingSnapshot
+
+  liftIO $ do
+    root <- findRootDir
+    stateDir <- mustStateDir root
+    (xml, manifest) <- readManifest_ root
+
+    snapshot <- readSnapshotByName stateDir name (snapshotProjects manifest)
+    putStrLn $ showTopElement (snapshotManifest snapshot xml)
 
 fooCmd :: WithFactory n r => Command Options
 fooCmd = defCmd { cmdName = "foo"

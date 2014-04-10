@@ -14,7 +14,8 @@ executable repo-snapshot
   build-depends:       base ==4.6.*, filepath, directory, filelock,
                        gitlib, gitlib-libgit2, data-default, ui-command,
                        transformers, text, shelly, tagged, time, git-date,
-                       monad-control, mtl, xml, regex-posix, raw-strings-qq
+                       monad-control, mtl, xml, regex-posix, raw-strings-qq,
+                       syb
   hs-source-dirs:      src
   ghc-options:         -Wall -fno-warn-name-shadowing
   main-is:             RepoSnapshot.hs
