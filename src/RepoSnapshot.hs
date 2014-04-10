@@ -45,7 +45,8 @@ import Text.RawString.QQ (r)
 import Text.Regex.Posix ((=~))
 
 import Text.XML.Light (QName(QName),
-                       Element(elName, elAttribs),
+                       Element(elName, elAttribs, elContent),
+                       Content(Elem),
                        Attr(Attr, attrKey, attrVal),
                        parseXMLDoc, findElement, blank_element,
                        findChild, findChildren, findAttr,
@@ -395,9 +396,16 @@ snapshotManifest :: IsOid (Oid r) => Snapshot r -> Element -> Element
 snapshotManifest s = everywhere (mkT go)
   where projects = map (Text.unpack . name *** renderRef) (unSnapshot s)
 
+        filterBlank x = x { elContent = content }
+          where content = filter (not . isBlankElem) (elContent x)
+
+                isBlankElem (Elem el) | QName "" _ _ <- elName el = True
+                                      | otherwise = False
+                isBlankElem _ = False
+
         go :: Element -> Element
-        go x | QName "project" _ _ <- elName x = goProject x
-             | otherwise = x
+        go x | QName "project" _ _ <- elName x = goProject $ filterBlank x
+             | otherwise = filterBlank x
 
         goProject x | Just ref <- maybeRef = x {elAttribs = sort $ rev ref : attrs'}
                     | otherwise = blank_element
