@@ -324,8 +324,8 @@ getSnapshots stateDir =
   filterM (doesFileExist . combine dir) =<< getDirectoryContents dir
   where dir = snapshotsDir stateDir
 
-readManifest :: WithFactory n r => FilePath -> IO (Snapshot r)
-readManifest rootDir = do
+readManifest_ :: WithFactory n r => FilePath -> IO (Element, Snapshot r)
+readManifest_ rootDir = do
   mustFile manifestPath
   doc <- parseXMLDoc <$> readFile manifestPath
   let maybeManifest = findElement (byName "manifest") =<< doc
@@ -338,7 +338,8 @@ readManifest rootDir = do
   when (isNothing maybeManifest || null remotes || null projects)
     errorBadManifest
 
-  Snapshot <$> mapM (parseProject def) projects
+  snapshot <- Snapshot <$> mapM (parseProject def) projects
+  return (fromJust doc, snapshot)
 
   where manifestPath = combine rootDir ".repo/manifest.xml"
 
@@ -381,6 +382,9 @@ readManifest rootDir = do
 
                 remote = Text.pack $ must $ findAttr (byName "remote") elem <|> defRemote
                 rev = Text.pack $ must $ findAttr (byName "revision") elem <|> defRev
+
+readManifest :: WithFactory n r => FilePath -> IO (Snapshot r)
+readManifest = fmap snd . readManifest_
 
 mustParseDate :: String -> IO UTCTime
 mustParseDate date = do
