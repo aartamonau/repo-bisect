@@ -11,7 +11,6 @@
 
 import Control.Arrow ((***), second)
 import Control.Applicative ((<$>), (<|>))
-import Control.Concurrent (threadDelay)
 import Control.Exception (finally, evaluate, catch, onException)
 import Control.Monad (forM, forM_, zipWithM_, when, unless, filterM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -53,7 +52,7 @@ import Text.XML.Light (QName(QName),
                        showTopElement)
 
 import Git (MonadGit(lookupCommit, lookupReference, lookupTree),
-            Commit(commitParents, commitOid, commitCommitter, commitTree),
+            Commit(commitParents, commitCommitter, commitTree),
             Signature(signatureWhen),
             RefTarget(RefObj, RefSymbolic), Oid, CommitOid,
             Tree,
@@ -457,7 +456,7 @@ app = def' { appName = "repo-snapshot"
            , appProject = "repo-utils"
            , appCategories = ["foo", mainCategory]
            , appCmds = [listCmd, checkoutCmd, saveCmd,
-                        deleteCmd, showCmd, exportCmd, fooCmd]
+                        deleteCmd, showCmd, exportCmd]
            , appBugEmail = "aliaksiej.artamonau@gmail.com"
            , appOptions = options
            , appProcessConfig = processConfig
@@ -647,62 +646,6 @@ exportHandler = do
 
     snapshot <- readSnapshotByName stateDir name (snapshotProjects manifest)
     putStrLn $ showTopElement (snapshotManifest snapshot xml)
-
-fooCmd :: WithFactory n r => Command Options
-fooCmd = defCmd { cmdName = "foo"
-                , cmdHandler = liftIO fooHandler
-                , cmdShortDesc = "foo short desc"
-                , cmdCategory = "foo"
-                }
-
-fooHandler :: WithFactory n r => IO ()
-fooHandler = do
-  rootDir <- findRootDir
-  stateDir <- mustStateDir rootDir
-
-  yearAgo <- mustParseDate "one year ago"
-  monthAgo <- mustParseDate "one month ago"
-
-  withLock stateDir $ do
-    putStrLn $ "root directory: " ++ rootDir
-    putStrLn $ "state directory: " ++ stateDir
-
-    manifest <- readManifest rootDir
-    putStrLn $ "manifest:\n" ++ showSnapshot manifest
-
-    let projects = snapshotProjects manifest
-
-    saveSnapshotFile (headsPath stateDir) =<< getHeadsSnapshot projects
-    heads <- readSnapshotFile (headsPath stateDir) projects
-
-    putStrLn "projects: "
-    forM_ (unSnapshot heads) $ \(p@(Project {name, path}), head) -> do
-      putStrLn $ Text.unpack name ++ ": " ++
-        path ++ " => " ++ Text.unpack (renderRef head)
-
-      maybeCommitOid <- fmap commitOid <$> findCommitByDate p head yearAgo
-
-      putStrLn $ "year ago commit => " ++ show maybeCommitOid
-      putStrLn ""
-
-      checkoutRef p head
-
-    putStrLn "=================================================="
-
-    yearAgoSnapshot <- toFullSnapshot <$> snapshotByDate heads yearAgo
-    putStrLn $ "one year old snapshot:\n" ++ showSnapshot yearAgoSnapshot
-
-    putStrLn "=================================================="
-
-    monthAgoSnapshot <- toFullSnapshot <$> snapshotByDate heads monthAgo
-    putStrLn $ "one month old snapshot:\n" ++ showSnapshot monthAgoSnapshot
-
-    putStrLn "checking out one month old snapshot"
-    checkoutSnapshot monthAgoSnapshot
-
-    threadDelay 10000000
-
-  where showSnapshot = Text.unpack . renderSnapshot
 
 main :: IO ()
 main = withFactory lgFactory (appMainWithOptions app)
