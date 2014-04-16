@@ -14,7 +14,7 @@ import Control.Applicative ((<$>), (<|>))
 import Control.Exception (finally, evaluate, catch, onException)
 import Control.Monad (forM, forM_, zipWithM_, when, unless, filterM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Reader (ReaderT, runReaderT, ask)
+import Control.Monad.Reader (ReaderT, runReaderT, ask, asks)
 import Control.Monad.Trans (lift)
 
 import Data.Default (Default(def))
@@ -31,10 +31,9 @@ import qualified Data.Text.IO as Text
 import Data.Time (UTCTime, zonedTimeToUTC)
 import Data.Time.Git (io_approxidate, posixToUTC)
 
-import System.Directory (getCurrentDirectory, canonicalizePath,
-                         doesDirectoryExist, doesFileExist, createDirectory,
+import System.Directory (doesDirectoryExist, doesFileExist, createDirectory,
                          getDirectoryContents, removeFile)
-import System.FilePath (combine, takeDirectory)
+import System.FilePath (combine)
 
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 
@@ -75,6 +74,8 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
 
 import Control.Monad.Trans.Control (MonadBaseControl, control)
 
+import Repo (runRepo, repoRoot)
+
 type Gitty n r = (MonadGit r n, MonadBaseControl IO n)
 type RepoFactory n r = RepositoryFactory n IO r
 type WithFactory n r = (Gitty n r, ?factory :: RepoFactory n r)
@@ -82,22 +83,6 @@ type WithFactory n r = (Gitty n r, ?factory :: RepoFactory n r)
 -- TODO: something better than this
 warn :: String -> IO ()
 warn = hPutStrLn stderr . ("Warning: " ++)
-
-repoDirName :: FilePath
-repoDirName = ".repo"
-
-findRootDir :: IO FilePath
-findRootDir = go =<< canonicalizePath =<< getCurrentDirectory
-  where go :: FilePath -> IO FilePath
-        go dir = do
-          exists <- doesDirectoryExist $ combine dir repoDirName
-          if exists
-            then return dir
-            else do
-              let parentDir = takeDirectory dir
-              when (parentDir == dir) $
-                error "could not find .repo directory"
-              go parentDir
 
 stateDirName :: FilePath
 stateDirName = ".repo-utils"
@@ -488,16 +473,18 @@ argsExistingSnapshot = do
 
   case args of
     [name] ->
-      liftIO $ do
-        rootDir <- findRootDir
-        stateDir <- mustStateDir rootDir
+      runRepo $ do
+        rootDir <- asks repoRoot
 
-        snapshots <- getSnapshots stateDir
+        liftIO $ do
+          stateDir <- mustStateDir rootDir
 
-        unless (name `elem` snapshots) $
-          error $ "unknown snapshot '" ++ name ++ "'"
+          snapshots <- getSnapshots stateDir
 
-        return name
+          unless (name `elem` snapshots) $
+            error $ "unknown snapshot '" ++ name ++ "'"
+
+          return name
     _ ->
       -- TODO: would be helpful to be able to show help here
       error "bad arguments"
@@ -510,10 +497,12 @@ listCmd = defCmd { cmdName = "list"
                  }
 
 listHandler :: IO ()
-listHandler = do
-  rootDir <- findRootDir
-  stateDir <- mustStateDir rootDir
-  mapM_ putStrLn =<< getSnapshots stateDir
+listHandler = runRepo $ do
+  rootDir <- asks repoRoot
+
+  liftIO $ do
+    stateDir <- mustStateDir rootDir
+    mapM_ putStrLn =<< getSnapshots stateDir
 
 checkoutCmd :: WithFactory n r => Command Options
 checkoutCmd = defCmd { cmdName = "checkout"
@@ -526,17 +515,19 @@ checkoutHandler :: WithFactory n r => App Options ()
 checkoutHandler = do
   args <- appArgs
   options <- appConfig
-  liftIO $ do
-    rootDir <- findRootDir
-    stateDir <- mustStateDir rootDir
-    manifest <- readManifest rootDir
-    snapshots <- getSnapshots stateDir
+  runRepo $ do
+    rootDir <- asks repoRoot
 
-    case parseArgs args options snapshots of
-      Left date ->
-        handleDate manifest date
-      Right snapshot ->
-        handleSnapshot stateDir manifest snapshot
+    liftIO $ do
+      stateDir <- mustStateDir rootDir
+      manifest <- readManifest rootDir
+      snapshots <- getSnapshots stateDir
+
+      case parseArgs args options snapshots of
+        Left date ->
+          handleDate manifest date
+        Right snapshot ->
+          handleSnapshot stateDir manifest snapshot
 
   where parseArgs args options snapshots
           | forceDate options = Left snapshotOrDate
@@ -571,24 +562,26 @@ saveHandler = do
 
   case args of
     [name] ->
-      liftIO $ do
-        rootDir <- findRootDir
-        stateDir <- mustStateDir rootDir
-        projects <- snapshotProjects <$> readManifest rootDir
-        snapshots <- getSnapshots stateDir
+      runRepo $ do
+        rootDir <- asks repoRoot
 
-        unless (isValidSnapshotName name) $
-          error $ "invalid snapshot name '" ++ name ++ "'"
+        liftIO $ do
+          stateDir <- mustStateDir rootDir
+          projects <- snapshotProjects <$> readManifest rootDir
+          snapshots <- getSnapshots stateDir
 
-        when (name `elem` snapshots && not (overwriteSnapshot options)) $
-          error $ "snapshot '" ++ name ++ "' already exists"
+          unless (isValidSnapshotName name) $
+            error $ "invalid snapshot name '" ++ name ++ "'"
 
-        heads <- getHeadsSnapshot projects >>= \hs ->
-          if resolveRefNames options
-            then resolveSnapshot hs
-            else return hs
+          when (name `elem` snapshots && not (overwriteSnapshot options)) $
+            error $ "snapshot '" ++ name ++ "' already exists"
 
-        saveSnapshotByName stateDir name heads
+          heads <- getHeadsSnapshot projects >>= \hs ->
+            if resolveRefNames options
+              then resolveSnapshot hs
+              else return hs
+
+          saveSnapshotByName stateDir name heads
     _ ->
       -- TODO: would be helpful to be able to show help here
       error "bad arguments"
@@ -604,10 +597,12 @@ deleteHandler :: WithFactory n r => App Options ()
 deleteHandler = do
   name <- argsExistingSnapshot
 
-  liftIO $ do
-    rootDir <- findRootDir
-    stateDir <- mustStateDir rootDir
-    removeSnapshotByName stateDir name
+  runRepo $ do
+    rootDir <- asks repoRoot
+
+    liftIO $ do
+      stateDir <- mustStateDir rootDir
+      removeSnapshotByName stateDir name
 
 showCmd :: WithFactory n r => Command Options
 showCmd = defCmd { cmdName = "show"
@@ -620,13 +615,15 @@ showHandler :: WithFactory n r => App Options ()
 showHandler = do
   name <- argsExistingSnapshot
 
-  liftIO $ do
-    root <- findRootDir
-    stateDir <- mustStateDir root
+  runRepo $ do
+    root <- asks repoRoot
 
-    projects <- snapshotProjects <$> readManifest root
-    snapshot <- readSnapshotByName stateDir name projects
-    Text.putStrLn $ renderSnapshot snapshot
+    liftIO $ do
+      stateDir <- mustStateDir root
+
+      projects <- snapshotProjects <$> readManifest root
+      snapshot <- readSnapshotByName stateDir name projects
+      Text.putStrLn $ renderSnapshot snapshot
 
 exportCmd :: WithFactory n r => Command Options
 exportCmd = defCmd { cmdName = "export"
@@ -639,13 +636,15 @@ exportHandler :: WithFactory n r => App Options ()
 exportHandler = do
   name <- argsExistingSnapshot
 
-  liftIO $ do
-    root <- findRootDir
-    stateDir <- mustStateDir root
-    (xml, manifest) <- readManifest_ root
+  runRepo $ do
+    root <- asks repoRoot
 
-    snapshot <- readSnapshotByName stateDir name (snapshotProjects manifest)
-    putStrLn $ showTopElement (snapshotManifest snapshot xml)
+    liftIO $ do
+      stateDir <- mustStateDir root
+      (xml, manifest) <- readManifest_ root
+
+      snapshot <- readSnapshotByName stateDir name (snapshotProjects manifest)
+      putStrLn $ showTopElement (snapshotManifest snapshot xml)
 
 main :: IO ()
 main = withFactory lgFactory (appMainWithOptions app)
