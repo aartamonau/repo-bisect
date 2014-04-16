@@ -18,4 +18,4 @@ executable repo-snapshot
                        syb
   hs-source-dirs:      src
   ghc-options:         -Wall -fno-warn-name-shadowing
-  main-is:             RepoSnapshot.hs
+  main-is:             Snapshot.hs
