@@ -31,8 +31,7 @@ import qualified Data.Text.IO as Text
 import Data.Time (UTCTime, zonedTimeToUTC)
 import Data.Time.Git (io_approxidate, posixToUTC)
 
-import System.Directory (doesDirectoryExist, doesFileExist, createDirectory,
-                         getDirectoryContents, removeFile)
+import System.Directory (doesFileExist, getDirectoryContents, removeFile)
 import System.FilePath (combine)
 
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
@@ -74,7 +73,7 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
 
 import Control.Monad.Trans.Control (MonadBaseControl, control)
 
-import Repo (runRepo, repoRootDir)
+import Repo (runRepo, repoRootDir, repoStateDir)
 
 type Gitty n r = (MonadGit r n, MonadBaseControl IO n)
 type RepoFactory n r = RepositoryFactory n IO r
@@ -90,28 +89,11 @@ stateDirName = ".repo-utils"
 snapshotsDir :: FilePath -> FilePath
 snapshotsDir stateDir = combine stateDir "snapshots"
 
-mustDir :: FilePath -> IO ()
-mustDir dir = do
-  exists <- doesDirectoryExist dir
-  unless exists $ do
-    fileExists <- doesFileExist dir
-    when fileExists $
-      error $ "failed to create state directory (" ++ dir ++ "): file exists"
-    createDirectory dir
-
 mustFile :: FilePath -> IO ()
 mustFile path = do
   exists <- doesFileExist path
   unless exists $
     error $ "could not find " ++ path
-
-mustStateDir :: FilePath -> IO FilePath
-mustStateDir rootDir = do
-  mustDir stateDir
-  mustDir (snapshotsDir stateDir)
-  return stateDir
-
-  where stateDir = combine rootDir stateDirName
 
 withLock :: FilePath -> IO a -> IO a
 withLock stateDir f = do
@@ -474,11 +456,9 @@ argsExistingSnapshot = do
   case args of
     [name] ->
       runRepo $ do
-        rootDir <- asks repoRootDir
+        stateDir <- asks repoStateDir
 
         liftIO $ do
-          stateDir <- mustStateDir rootDir
-
           snapshots <- getSnapshots stateDir
 
           unless (name `elem` snapshots) $
@@ -498,10 +478,9 @@ listCmd = defCmd { cmdName = "list"
 
 listHandler :: IO ()
 listHandler = runRepo $ do
-  rootDir <- asks repoRootDir
+  stateDir <- asks repoStateDir
 
-  liftIO $ do
-    stateDir <- mustStateDir rootDir
+  liftIO $
     mapM_ putStrLn =<< getSnapshots stateDir
 
 checkoutCmd :: WithFactory n r => Command Options
@@ -517,9 +496,9 @@ checkoutHandler = do
   options <- appConfig
   runRepo $ do
     rootDir <- asks repoRootDir
+    stateDir <- asks repoStateDir
 
     liftIO $ do
-      stateDir <- mustStateDir rootDir
       manifest <- readManifest rootDir
       snapshots <- getSnapshots stateDir
 
@@ -564,9 +543,9 @@ saveHandler = do
     [name] ->
       runRepo $ do
         rootDir <- asks repoRootDir
+        stateDir <- asks repoStateDir
 
         liftIO $ do
-          stateDir <- mustStateDir rootDir
           projects <- snapshotProjects <$> readManifest rootDir
           snapshots <- getSnapshots stateDir
 
@@ -598,10 +577,9 @@ deleteHandler = do
   name <- argsExistingSnapshot
 
   runRepo $ do
-    rootDir <- asks repoRootDir
+    stateDir <- asks repoStateDir
 
-    liftIO $ do
-      stateDir <- mustStateDir rootDir
+    liftIO $
       removeSnapshotByName stateDir name
 
 showCmd :: WithFactory n r => Command Options
@@ -616,12 +594,11 @@ showHandler = do
   name <- argsExistingSnapshot
 
   runRepo $ do
-    root <- asks repoRootDir
+    rootDir <- asks repoRootDir
+    stateDir <- asks repoStateDir
 
     liftIO $ do
-      stateDir <- mustStateDir root
-
-      projects <- snapshotProjects <$> readManifest root
+      projects <- snapshotProjects <$> readManifest rootDir
       snapshot <- readSnapshotByName stateDir name projects
       Text.putStrLn $ renderSnapshot snapshot
 
@@ -637,11 +614,11 @@ exportHandler = do
   name <- argsExistingSnapshot
 
   runRepo $ do
-    root <- asks repoRootDir
+    rootDir <- asks repoRootDir
+    stateDir <- asks repoStateDir
 
     liftIO $ do
-      stateDir <- mustStateDir root
-      (xml, manifest) <- readManifest_ root
+      (xml, manifest) <- readManifest_ rootDir
 
       snapshot <- readSnapshotByName stateDir name (snapshotProjects manifest)
       putStrLn $ showTopElement (snapshotManifest snapshot xml)
