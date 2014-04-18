@@ -74,7 +74,7 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
 
 import Control.Monad.Trans.Control (MonadBaseControl, control)
 
-import Repo (runRepo, repoRoot)
+import Repo (runRepo, repoRootDir)
 
 type Gitty n r = (MonadGit r n, MonadBaseControl IO n)
 type RepoFactory n r = RepositoryFactory n IO r
@@ -474,7 +474,7 @@ argsExistingSnapshot = do
   case args of
     [name] ->
       runRepo $ do
-        rootDir <- asks repoRoot
+        rootDir <- asks repoRootDir
 
         liftIO $ do
           stateDir <- mustStateDir rootDir
@@ -498,7 +498,7 @@ listCmd = defCmd { cmdName = "list"
 
 listHandler :: IO ()
 listHandler = runRepo $ do
-  rootDir <- asks repoRoot
+  rootDir <- asks repoRootDir
 
   liftIO $ do
     stateDir <- mustStateDir rootDir
@@ -516,7 +516,7 @@ checkoutHandler = do
   args <- appArgs
   options <- appConfig
   runRepo $ do
-    rootDir <- asks repoRoot
+    rootDir <- asks repoRootDir
 
     liftIO $ do
       stateDir <- mustStateDir rootDir
@@ -563,7 +563,7 @@ saveHandler = do
   case args of
     [name] ->
       runRepo $ do
-        rootDir <- asks repoRoot
+        rootDir <- asks repoRootDir
 
         liftIO $ do
           stateDir <- mustStateDir rootDir
@@ -598,7 +598,7 @@ deleteHandler = do
   name <- argsExistingSnapshot
 
   runRepo $ do
-    rootDir <- asks repoRoot
+    rootDir <- asks repoRootDir
 
     liftIO $ do
       stateDir <- mustStateDir rootDir
@@ -616,7 +616,7 @@ showHandler = do
   name <- argsExistingSnapshot
 
   runRepo $ do
-    root <- asks repoRoot
+    root <- asks repoRootDir
 
     liftIO $ do
       stateDir <- mustStateDir root
@@ -637,7 +637,7 @@ exportHandler = do
   name <- argsExistingSnapshot
 
   runRepo $ do
-    root <- asks repoRoot
+    root <- asks repoRootDir
 
     liftIO $ do
       stateDir <- mustStateDir root

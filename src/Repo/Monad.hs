@@ -1,7 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Repo.Monad
-       ( RepoInfo(repoRoot)
+       ( RepoInfo(repoRootDir)
        , runRepo
        , Repo
        ) where
@@ -14,7 +14,7 @@ import System.Directory (getCurrentDirectory, canonicalizePath,
                          doesDirectoryExist)
 import System.FilePath (combine, takeDirectory)
 
-data RepoInfo = RepoInfo { repoRoot :: FilePath
+data RepoInfo = RepoInfo { repoRootDir :: FilePath
                          }
 
 newtype Repo a = Repo { unRepo :: ReaderT RepoInfo IO a }
@@ -23,7 +23,7 @@ newtype Repo a = Repo { unRepo :: ReaderT RepoInfo IO a }
 runRepo :: MonadIO m => Repo a -> m a
 runRepo r = do
   root <- liftIO findRootDir
-  let info = RepoInfo { repoRoot = root }
+  let info = RepoInfo { repoRootDir = root }
 
   liftIO $ runReaderT (unRepo r) info
 
