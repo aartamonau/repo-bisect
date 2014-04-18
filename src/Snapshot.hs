@@ -83,9 +83,6 @@ type WithFactory n r = (Gitty n r, ?factory :: RepoFactory n r)
 warn :: String -> IO ()
 warn = hPutStrLn stderr . ("Warning: " ++)
 
-stateDirName :: FilePath
-stateDirName = ".repo-utils"
-
 mustFile :: FilePath -> IO ()
 mustFile path = do
   exists <- doesFileExist path
