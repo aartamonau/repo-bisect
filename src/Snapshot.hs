@@ -73,7 +73,7 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
 
 import Control.Monad.Trans.Control (MonadBaseControl, control)
 
-import Repo (runRepo, repoRootDir, repoStateDir)
+import Repo (runRepo, repoRootDir, repoStateDir, repoSnapshotsDir)
 
 type Gitty n r = (MonadGit r n, MonadBaseControl IO n)
 type RepoFactory n r = RepositoryFactory n IO r
@@ -85,9 +85,6 @@ warn = hPutStrLn stderr . ("Warning: " ++)
 
 stateDirName :: FilePath
 stateDirName = ".repo-utils"
-
-snapshotsDir :: FilePath -> FilePath
-snapshotsDir stateDir = combine stateDir "snapshots"
 
 mustFile :: FilePath -> IO ()
 mustFile path = do
@@ -225,18 +222,15 @@ readSnapshotFile path projects = do
                                   ++ path ++ " : " ++ Text.unpack needle
           where p proj = name proj == needle
 
-snapshotPath :: FilePath -> String -> FilePath
-snapshotPath stateDir = combine (snapshotsDir stateDir)
-
 readSnapshotByName :: WithFactory n r
                    => FilePath -> String -> [Project] -> IO (Snapshot r)
-readSnapshotByName stateDir = readSnapshotFile . snapshotPath stateDir
+readSnapshotByName snapshotsDir = readSnapshotFile . combine snapshotsDir
 
 saveSnapshotByName :: IsOid (Oid r) => FilePath -> String -> Snapshot r -> IO ()
-saveSnapshotByName stateDir = saveSnapshotFile . snapshotPath stateDir
+saveSnapshotByName snapshotsDir = saveSnapshotFile . combine snapshotsDir
 
 removeSnapshotByName :: FilePath -> String -> IO ()
-removeSnapshotByName stateDir = removeFile . snapshotPath stateDir
+removeSnapshotByName snapshotsDir = removeFile . combine snapshotsDir
 
 checkoutRef :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
 checkoutRef (Project {path}) ref =
@@ -292,9 +286,9 @@ snapshotByDate heads date =
     return (p, commitRefTarget <$> commit)
 
 getSnapshots :: FilePath -> IO [String]
-getSnapshots stateDir =
-  filterM (doesFileExist . combine dir) =<< getDirectoryContents dir
-  where dir = snapshotsDir stateDir
+getSnapshots snapshotsDir =
+  filterM (doesFileExist . combine snapshotsDir)
+    =<< getDirectoryContents snapshotsDir
 
 readManifest_ :: WithFactory n r => FilePath -> IO (Element, Snapshot r)
 readManifest_ rootDir = do
@@ -456,10 +450,10 @@ argsExistingSnapshot = do
   case args of
     [name] ->
       runRepo $ do
-        stateDir <- asks repoStateDir
+        snapshotsDir <- asks repoSnapshotsDir
 
         liftIO $ do
-          snapshots <- getSnapshots stateDir
+          snapshots <- getSnapshots snapshotsDir
 
           unless (name `elem` snapshots) $
             error $ "unknown snapshot '" ++ name ++ "'"
@@ -478,10 +472,10 @@ listCmd = defCmd { cmdName = "list"
 
 listHandler :: IO ()
 listHandler = runRepo $ do
-  stateDir <- asks repoStateDir
+  snapshotsDir <- asks repoSnapshotsDir
 
   liftIO $
-    mapM_ putStrLn =<< getSnapshots stateDir
+    mapM_ putStrLn =<< getSnapshots snapshotsDir
 
 checkoutCmd :: WithFactory n r => Command Options
 checkoutCmd = defCmd { cmdName = "checkout"
@@ -497,10 +491,11 @@ checkoutHandler = do
   runRepo $ do
     rootDir <- asks repoRootDir
     stateDir <- asks repoStateDir
+    snapshotsDir <- asks repoSnapshotsDir
 
     liftIO $ do
       manifest <- readManifest rootDir
-      snapshots <- getSnapshots stateDir
+      snapshots <- getSnapshots snapshotsDir
 
       case parseArgs args options snapshots of
         Left date ->
@@ -514,8 +509,8 @@ checkoutHandler = do
           | otherwise = Left snapshotOrDate
           where snapshotOrDate = unwords args
 
-        handleSnapshot stateDir manifest snapshot = liftIO $
-              tryCheckoutSnapshot =<< readSnapshotByName stateDir snapshot projects
+        handleSnapshot snapshotsDir manifest snapshot = liftIO $
+              tryCheckoutSnapshot =<< readSnapshotByName snapshotsDir snapshot projects
           where projects = snapshotProjects manifest
 
         handleDate manifest date = liftIO $ do
@@ -543,11 +538,11 @@ saveHandler = do
     [name] ->
       runRepo $ do
         rootDir <- asks repoRootDir
-        stateDir <- asks repoStateDir
+        snapshotsDir <- asks repoSnapshotsDir
 
         liftIO $ do
           projects <- snapshotProjects <$> readManifest rootDir
-          snapshots <- getSnapshots stateDir
+          snapshots <- getSnapshots snapshotsDir
 
           unless (isValidSnapshotName name) $
             error $ "invalid snapshot name '" ++ name ++ "'"
@@ -560,7 +555,7 @@ saveHandler = do
               then resolveSnapshot hs
               else return hs
 
-          saveSnapshotByName stateDir name heads
+          saveSnapshotByName snapshotsDir name heads
     _ ->
       -- TODO: would be helpful to be able to show help here
       error "bad arguments"
@@ -577,10 +572,10 @@ deleteHandler = do
   name <- argsExistingSnapshot
 
   runRepo $ do
-    stateDir <- asks repoStateDir
+    snapshotsDir <- asks repoStateDir
 
     liftIO $
-      removeSnapshotByName stateDir name
+      removeSnapshotByName snapshotsDir name
 
 showCmd :: WithFactory n r => Command Options
 showCmd = defCmd { cmdName = "show"
@@ -595,11 +590,11 @@ showHandler = do
 
   runRepo $ do
     rootDir <- asks repoRootDir
-    stateDir <- asks repoStateDir
+    snapshotsDir <- asks repoSnapshotsDir
 
     liftIO $ do
       projects <- snapshotProjects <$> readManifest rootDir
-      snapshot <- readSnapshotByName stateDir name projects
+      snapshot <- readSnapshotByName snapshotsDir name projects
       Text.putStrLn $ renderSnapshot snapshot
 
 exportCmd :: WithFactory n r => Command Options
@@ -615,12 +610,12 @@ exportHandler = do
 
   runRepo $ do
     rootDir <- asks repoRootDir
-    stateDir <- asks repoStateDir
+    snapshotsDir <- asks repoSnapshotsDir
 
     liftIO $ do
       (xml, manifest) <- readManifest_ rootDir
 
-      snapshot <- readSnapshotByName stateDir name (snapshotProjects manifest)
+      snapshot <- readSnapshotByName snapshotsDir name (snapshotProjects manifest)
       putStrLn $ showTopElement (snapshotManifest snapshot xml)
 
 main :: IO ()
