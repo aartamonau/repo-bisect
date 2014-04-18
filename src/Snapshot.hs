@@ -73,7 +73,9 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
 
 import Control.Monad.Trans.Control (MonadBaseControl, control)
 
-import Repo (runRepo, repoRootDir, repoStateDir, repoSnapshotsDir)
+import Repo (Project(Project, projectName, projectPath),
+             Snapshot(Snapshot, unSnapshot),
+             runRepo, repoRootDir, repoStateDir, repoSnapshotsDir)
 
 type Gitty n r = (MonadGit r n, MonadBaseControl IO n)
 type RepoFactory n r = RepositoryFactory n IO r
@@ -96,21 +98,16 @@ withLock stateDir f = do
   where lockPath = combine stateDir "lock"
         extractLock = fromMaybe (error $ "could not acquire file lock at " ++ lockPath)
 
-data Project = Project { name :: Text
-                       , path :: FilePath
-                       }
-             deriving Show
-
 type RM m a = ReaderT Project m a
 
 withProject :: WithFactory n r => Project -> RM n a -> IO a
-withProject proj k = withRepository ?factory (path proj) $ runReaderT k proj
+withProject proj k = withRepository ?factory (projectPath proj) $ runReaderT k proj
 
 getProjectHead :: WithFactory n r => Project -> IO (RefTarget r)
 getProjectHead proj =
   withProject proj $ do
     ref <- lift $ lookupReference "HEAD"
-    return $ fromMaybe (error $ "could not resolve HEAD of " ++ path proj) ref
+    return $ fromMaybe (error $ "could not resolve HEAD of " ++ projectPath proj) ref
 
 getHeadsSnapshot :: WithFactory n r => [Project] -> IO (Snapshot r)
 getHeadsSnapshot projects =
@@ -142,7 +139,7 @@ parseRef ref = do
   proj <- ask
   return $ fromMaybe
     (error $ "could not resolve " ++ Text.unpack ref
-             ++ " at " ++ path proj) finalRef
+             ++ " at " ++ projectPath proj) finalRef
 
   where trySymName =
           lift $
@@ -158,7 +155,7 @@ resolveRef ref = do
           proj <- ask
           error $ "could not resolve "
             ++ Text.unpack (renderRef ref)
-            ++ " in project '" ++ Text.unpack (name proj) ++ "'"
+            ++ " in project '" ++ Text.unpack (projectName proj) ++ "'"
 
 resolveSnapshot :: WithFactory n r => Snapshot r -> IO (Snapshot r)
 resolveSnapshot = fmap Snapshot . mapM f . unSnapshot
@@ -173,17 +170,16 @@ refTree ref = do
 headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
 
-newtype Snapshot r = Snapshot { unSnapshot :: [(Project, RefTarget r)] }
 type PartialSnapshot r = [(Project, Maybe (RefTarget r))]
 
 renderSnapshot :: IsOid (Oid r) => Snapshot r -> Text
 renderSnapshot (Snapshot ps) = Text.intercalate "\n" (map renderPair ps)
-  where width = maximum $ map (Text.length . name . fst) ps
-        renderPair (proj, ref) = Text.concat [name proj,
+  where width = maximum $ map (Text.length . projectName . fst) ps
+        renderPair (proj, ref) = Text.concat [projectName proj,
                                               Text.replicate (width - n) " ",
                                               " ",
                                               renderRef ref]
-          where n = Text.length $ name proj
+          where n = Text.length $ projectName proj
 
 toFullSnapshot :: PartialSnapshot r -> Snapshot r
 toFullSnapshot = Snapshot . map (second fromJust) . filter (isJust . snd)
@@ -195,8 +191,8 @@ saveSnapshotFile :: IsOid (Oid r) => FilePath -> Snapshot r -> IO ()
 saveSnapshotFile path projects =
   Text.writeFile path $ Text.concat (map oneLine $ unSnapshot projects)
 
-  where oneLine (Project {name}, ref) =
-          Text.concat [renderRef ref, " ", name, "\n"]
+  where oneLine (Project {projectName}, ref) =
+          Text.concat [renderRef ref, " ", projectName, "\n"]
 
 readSnapshotFile :: WithFactory n r => FilePath -> [Project] -> IO (Snapshot r)
 readSnapshotFile path projects = do
@@ -217,7 +213,7 @@ readSnapshotFile path projects = do
           | Just proj <- find p projects = proj
           | otherwise = error $ "got invalid project name in snapshot file "
                                   ++ path ++ " : " ++ Text.unpack needle
-          where p proj = name proj == needle
+          where p proj = projectName proj == needle
 
 readSnapshotByName :: WithFactory n r
                    => FilePath -> String -> [Project] -> IO (Snapshot r)
@@ -230,9 +226,9 @@ removeSnapshotByName :: FilePath -> String -> IO ()
 removeSnapshotByName snapshotsDir = removeFile . combine snapshotsDir
 
 checkoutRef :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
-checkoutRef (Project {path}) ref =
+checkoutRef (Project {projectPath}) ref =
   shelly $ silently $ do
-    cd $ fromString path
+    cd $ fromString projectPath
     run_ "git" ["checkout", branchify (renderRef ref)]
 
   where branchify s | Just branch <- Text.stripPrefix "refs/heads/" s = branch
@@ -340,8 +336,8 @@ readManifest_ rootDir = do
           where name = mustAttr (byName "name") elem
                 path = must $ findAttr (byName "path") elem <|> Just name
                 absPath = combine rootDir path
-                project = Project { name = Text.pack name,
-                                    path = absPath }
+                project = Project { projectName = Text.pack name,
+                                    projectPath = absPath }
 
                 remote = Text.pack $ must $ findAttr (byName "remote") elem <|> defRemote
                 rev = Text.pack $ must $ findAttr (byName "revision") elem <|> defRev
@@ -351,7 +347,7 @@ readManifest = fmap snd . readManifest_
 
 snapshotManifest :: IsOid (Oid r) => Snapshot r -> Element -> Element
 snapshotManifest s = everywhere (mkT go)
-  where projects = map (Text.unpack . name *** renderRef) (unSnapshot s)
+  where projects = map (Text.unpack . projectName *** renderRef) (unSnapshot s)
 
         filterBlank x = x { elContent = content }
           where content = filter (not . isBlankElem) (elContent x)
@@ -512,10 +508,10 @@ checkoutHandler = do
 
         handleDate manifest date = liftIO $ do
           partialSnapshot <- snapshotByDate manifest =<< mustParseDate date
-          forM_ partialSnapshot $ \(Project{name}, ref) ->
+          forM_ partialSnapshot $ \(Project{projectName}, ref) ->
             when (isNothing ref) $
               warn $ "couldn't find a commit matching the date in "
-                       ++ Text.unpack name
+                       ++ Text.unpack projectName
 
           tryCheckoutSnapshot (toFullSnapshot partialSnapshot)
 
