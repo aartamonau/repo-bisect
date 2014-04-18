@@ -6,13 +6,15 @@ module Repo.Monad
        , Repo
        ) where
 
-import Control.Monad (when, unless)
+import Control.Monad (when)
 import Control.Monad.Reader (ReaderT, MonadReader, runReaderT)
 import Control.Monad.Trans (MonadIO, liftIO)
 
 import System.Directory (getCurrentDirectory, canonicalizePath,
-                         doesDirectoryExist, doesFileExist, createDirectory)
+                         doesDirectoryExist)
 import System.FilePath (combine, takeDirectory)
+
+import Repo.Utils (mustDir)
 
 data RepoInfo = RepoInfo { repoRootDir :: FilePath
                          , repoStateDir :: FilePath
@@ -47,15 +49,6 @@ runRepo r = do
                       when (parentDir == dir) $
                         error "could not find .repo directory"
                       go parentDir
-
-        mustDir :: FilePath -> IO ()
-        mustDir dir = do
-          exists <- doesDirectoryExist dir
-          unless exists $ do
-            fileExists <- doesFileExist dir
-            when fileExists $
-              error $ "failed to create state directory (" ++ dir ++ "): file exists"
-          createDirectory dir
 
         mustStateDir :: FilePath -> IO FilePath
         mustStateDir rootDir = do
