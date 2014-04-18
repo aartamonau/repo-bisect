@@ -1,8 +1,11 @@
 module Repo.Utils
        ( mustDir
+       , io
        ) where
 
 import Control.Monad (when, unless)
+import Control.Monad.Trans (MonadIO, liftIO)
+
 import System.Directory (doesDirectoryExist, doesFileExist, createDirectory)
 
 mustDir :: FilePath -> IO ()
@@ -13,3 +16,6 @@ mustDir dir = do
     when fileExists $
       error $ "failed to create state directory (" ++ dir ++ "): file exists"
   createDirectory dir
+
+io :: MonadIO m => IO a -> m a
+io = liftIO

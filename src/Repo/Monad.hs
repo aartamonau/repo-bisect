@@ -8,13 +8,13 @@ module Repo.Monad
 
 import Control.Monad (when)
 import Control.Monad.Reader (ReaderT, MonadReader, runReaderT)
-import Control.Monad.Trans (MonadIO, liftIO)
+import Control.Monad.Trans (MonadIO)
 
 import System.Directory (getCurrentDirectory, canonicalizePath,
                          doesDirectoryExist)
 import System.FilePath (combine, takeDirectory)
 
-import Repo.Utils (mustDir)
+import Repo.Utils (mustDir, io)
 
 data RepoInfo = RepoInfo { repoRootDir :: FilePath
                          , repoStateDir :: FilePath
@@ -26,16 +26,16 @@ newtype Repo a = Repo { unRepo :: ReaderT RepoInfo IO a }
 
 runRepo :: MonadIO m => Repo a -> m a
 runRepo r = do
-  root <- liftIO findRootDir
-  state <- liftIO $ mustStateDir root
-  snapshots <- liftIO $ mustSnapshotsDir state
+  root <- io findRootDir
+  state <- io $ mustStateDir root
+  snapshots <- io $ mustSnapshotsDir state
 
   let info = RepoInfo { repoRootDir = root
                       , repoStateDir = state
                       , repoSnapshotsDir = snapshots
                       }
 
-  liftIO $ runReaderT (unRepo r) info
+  io $ runReaderT (unRepo r) info
 
   where findRootDir :: IO FilePath
         findRootDir = go =<< canonicalizePath =<< getCurrentDirectory
