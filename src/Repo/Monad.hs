@@ -35,38 +35,38 @@ runRepo r = do
 
   liftIO $ runReaderT (unRepo r) info
 
-findRootDir :: IO FilePath
-findRootDir = go =<< canonicalizePath =<< getCurrentDirectory
-  where go :: FilePath -> IO FilePath
-        go dir = do
-          exists <- doesDirectoryExist $ combine dir ".repo"
-          if exists
-            then return dir
-            else do
-              let parentDir = takeDirectory dir
-              when (parentDir == dir) $
-                error "could not find .repo directory"
-              go parentDir
+  where findRootDir :: IO FilePath
+        findRootDir = go =<< canonicalizePath =<< getCurrentDirectory
+          where go :: FilePath -> IO FilePath
+                go dir = do
+                  exists <- doesDirectoryExist $ combine dir ".repo"
+                  if exists
+                    then return dir
+                    else do
+                      let parentDir = takeDirectory dir
+                      when (parentDir == dir) $
+                        error "could not find .repo directory"
+                      go parentDir
 
-mustDir :: FilePath -> IO ()
-mustDir dir = do
-  exists <- doesDirectoryExist dir
-  unless exists $ do
-    fileExists <- doesFileExist dir
-    when fileExists $
-      error $ "failed to create state directory (" ++ dir ++ "): file exists"
-    createDirectory dir
+        mustDir :: FilePath -> IO ()
+        mustDir dir = do
+          exists <- doesDirectoryExist dir
+          unless exists $ do
+            fileExists <- doesFileExist dir
+            when fileExists $
+              error $ "failed to create state directory (" ++ dir ++ "): file exists"
+          createDirectory dir
 
-mustStateDir :: FilePath -> IO FilePath
-mustStateDir rootDir = do
-  mustDir stateDir
-  return stateDir
+        mustStateDir :: FilePath -> IO FilePath
+        mustStateDir rootDir = do
+          mustDir stateDir
+          return stateDir
 
-  where stateDir = combine rootDir ".repo-utils"
+          where stateDir = combine rootDir ".repo-utils"
 
-mustSnapshotsDir :: FilePath -> IO FilePath
-mustSnapshotsDir stateDir = do
-  mustDir snapshotsDir
-  return snapshotsDir
+        mustSnapshotsDir :: FilePath -> IO FilePath
+        mustSnapshotsDir stateDir = do
+          mustDir snapshotsDir
+          return snapshotsDir
 
-  where snapshotsDir = (combine stateDir "snapshots")
+          where snapshotsDir = (combine stateDir "snapshots")
