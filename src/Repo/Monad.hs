@@ -27,7 +27,7 @@ data RepoInfo = RepoInfo { repoRootDir :: FilePath
                          }
 
 newtype Repo a = Repo { unRepo :: ReaderT RepoInfo IO a }
-               deriving (Monad, MonadReader RepoInfo, MonadIO)
+               deriving (Monad, MonadReader RepoInfo, MonadIO, Functor)
 
 runRepo :: MonadIO m => Repo a -> m a
 runRepo r = do

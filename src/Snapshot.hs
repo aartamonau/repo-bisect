@@ -11,11 +11,10 @@
 
 import Control.Arrow ((***), second)
 import Control.Applicative ((<$>), (<|>))
-import Control.Exception (finally, evaluate, catch, onException)
+import Control.Exception (catch, onException)
 import Control.Monad (forM, forM_, zipWithM_, when, unless, filterM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Reader (ReaderT, runReaderT, ask, asks)
-import Control.Monad.Trans (lift)
+import Control.Monad.Reader (asks)
 
 import Data.Default (Default(def))
 import Data.Generics (everywhere, mkT)
@@ -34,8 +33,6 @@ import Data.Time.Git (io_approxidate, posixToUTC)
 import System.Directory (doesFileExist, getDirectoryContents, removeFile)
 import System.FilePath (combine)
 
-import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
-
 import System.IO (stderr, hPutStrLn)
 
 import Text.RawString.QQ (r)
@@ -49,15 +46,13 @@ import Text.XML.Light (QName(QName),
                        findChild, findChildren, findAttr,
                        showTopElement)
 
-import Git (MonadGit(lookupCommit, lookupReference, lookupTree),
-            Commit(commitParents, commitCommitter, commitTree),
+import Git (MonadGit,
+            Commit(commitCommitter),
             Signature(signatureWhen),
             RefTarget(RefObj, RefSymbolic), Oid, CommitOid,
-            Tree,
-            RepositoryFactory, IsOid,
+            IsOid,
             GitException,
-            withRepository, parseOid, renderOid,
-            referenceToOid, commitRefTarget)
+            renderOid, commitRefTarget)
 import Git.Libgit2 (lgFactory)
 
 import Shelly (cd, run_, shelly, silently)
@@ -75,11 +70,11 @@ import Control.Monad.Trans.Control (MonadBaseControl, control)
 
 import Repo (Project(Project, projectName, projectPath),
              Snapshot(Snapshot, unSnapshot),
-             runRepo, repoRootDir, repoStateDir, repoSnapshotsDir)
-
-type Gitty n r = (MonadGit r n, MonadBaseControl IO n)
-type RepoFactory n r = RepositoryFactory n IO r
-type WithFactory n r = (Gitty n r, ?factory :: RepoFactory n r)
+             Repo, runRepo, repoRootDir, repoStateDir, repoSnapshotsDir,
+             Project, getProjectHead, findCommit, withProject,
+             WithFactory, Gitty, GitFactory,
+             parseRef, resolveRef, isSHA)
+import Repo.Utils (io)
 
 -- TODO: something better than this
 warn :: String -> IO ()
@@ -91,25 +86,7 @@ mustFile path = do
   unless exists $
     error $ "could not find " ++ path
 
-withLock :: FilePath -> IO a -> IO a
-withLock stateDir f = do
-  lock <- evaluate =<< extractLock <$> tryLockFile lockPath Exclusive
-  f `finally` unlockFile lock
-  where lockPath = combine stateDir "lock"
-        extractLock = fromMaybe (error $ "could not acquire file lock at " ++ lockPath)
-
-type RM m a = ReaderT Project m a
-
-withProject :: WithFactory n r => Project -> RM n a -> IO a
-withProject proj k = withRepository ?factory (projectPath proj) $ runReaderT k proj
-
-getProjectHead :: WithFactory n r => Project -> IO (RefTarget r)
-getProjectHead proj =
-  withProject proj $ do
-    ref <- lift $ lookupReference "HEAD"
-    return $ fromMaybe (error $ "could not resolve HEAD of " ++ projectPath proj) ref
-
-getHeadsSnapshot :: WithFactory n r => [Project] -> IO (Snapshot r)
+getHeadsSnapshot :: WithFactory n r => [Project] -> Repo (Snapshot r)
 getHeadsSnapshot projects =
   Snapshot . zip projects <$> mapM getProjectHead projects
 
@@ -121,51 +98,9 @@ onGitException :: MonadBaseControl IO m => m a -> m a -> m a
 onGitException body what =
   control $ \run -> run body `catch` \ (_ :: GitException) -> run what
 
-parseSHA :: Gitty n r => Text -> RM n (Maybe (RefTarget r))
-parseSHA ref =
-  (do oid <- lift $ parseOid ref
-      _ <- lift $ lookupCommit (oidToCommitOid oid)
-      return $ Just (RefObj oid))
-  `onGitException` return Nothing
-
-isSHA :: Gitty n r => Text -> RM n Bool
-isSHA ref = isJust <$> parseSHA ref
-
-parseRef :: Gitty n r => Text -> RM n (RefTarget r)
-parseRef ref = do
-  shaRef <- parseSHA ref
-  finalRef <- maybe trySymName (return . Just) shaRef
-
-  proj <- ask
-  return $ fromMaybe
-    (error $ "could not resolve " ++ Text.unpack ref
-             ++ " at " ++ projectPath proj) finalRef
-
-  where trySymName =
-          lift $
-            (do _ <- evaluate <$> lookupReference ref
-                return $ Just (RefSymbolic ref)) `onGitException` return Nothing
-
-resolveRef :: Gitty n r => RefTarget r -> RM n (Oid r)
-resolveRef ref = do
-  maybeOid <- lift $ referenceToOid ref
-  maybe err return maybeOid
-
-  where err = do
-          proj <- ask
-          error $ "could not resolve "
-            ++ Text.unpack (renderRef ref)
-            ++ " in project '" ++ Text.unpack (projectName proj) ++ "'"
-
-resolveSnapshot :: WithFactory n r => Snapshot r -> IO (Snapshot r)
+resolveSnapshot :: WithFactory n r => Snapshot r -> Repo (Snapshot r)
 resolveSnapshot = fmap Snapshot . mapM f . unSnapshot
   where f (p, ref) = fmap (p,) (withProject p $ RefObj <$> resolveRef ref)
-
-refTree :: Gitty n r => RefTarget r -> RM n (Tree r)
-refTree ref = do
-  cid <- oidToCommitOid <$> resolveRef ref
-  tid <- commitTree <$> lift (lookupCommit cid)
-  lift (lookupTree tid)
 
 headsPath :: FilePath -> FilePath
 headsPath stateDir = combine stateDir "HEADS"
@@ -194,10 +129,10 @@ saveSnapshotFile path projects =
   where oneLine (Project {projectName}, ref) =
           Text.concat [renderRef ref, " ", projectName, "\n"]
 
-readSnapshotFile :: WithFactory n r => FilePath -> [Project] -> IO (Snapshot r)
+readSnapshotFile :: WithFactory n r => FilePath -> [Project] -> Repo (Snapshot r)
 readSnapshotFile path projects = do
-  mustFile path
-  content <- Text.readFile path
+  io $ mustFile path
+  content <- io $ Text.readFile path
 
   fmap Snapshot $ forM (map decodeLine $ Text.lines content) $ \(ref, name) -> do
     let proj = findProject name
@@ -216,7 +151,7 @@ readSnapshotFile path projects = do
           where p proj = projectName proj == needle
 
 readSnapshotByName :: WithFactory n r
-                   => FilePath -> String -> [Project] -> IO (Snapshot r)
+                   => FilePath -> String -> [Project] -> Repo (Snapshot r)
 readSnapshotByName snapshotsDir = readSnapshotFile . combine snapshotsDir
 
 saveSnapshotByName :: IsOid (Oid r) => FilePath -> String -> Snapshot r -> IO ()
@@ -237,10 +172,10 @@ checkoutRef (Project {projectPath}) ref =
 checkoutSnapshot :: IsOid (Oid r) => Snapshot r -> IO ()
 checkoutSnapshot = uncurry (zipWithM_ checkoutRef) . unzip . unSnapshot
 
-tryCheckoutSnapshot :: WithFactory n r => Snapshot r -> IO ()
+tryCheckoutSnapshot :: WithFactory n r => Snapshot r -> Repo ()
 tryCheckoutSnapshot snapshot = do
   heads <- getHeadsSnapshot (snapshotProjects snapshot)
-  checkoutSnapshot snapshot `onException` tryRecover heads
+  io $ checkoutSnapshot snapshot `onException` tryRecover heads
 
   where tryRecover heads = do
           warn "checkout failed; trying to roll back to previous state"
@@ -249,30 +184,14 @@ tryCheckoutSnapshot snapshot = do
 oidToCommitOid :: Oid r -> CommitOid r
 oidToCommitOid = Tagged
 
-findCommit :: WithFactory n r
-           => Project -> RefTarget r -> (Commit r -> Bool) -> IO (Maybe (Commit r))
-findCommit proj head p =
-  withProject proj $ do
-    headCommitOid <- oidToCommitOid <$> resolveRef head
-    go headCommitOid
-
-  where go cid = do
-          commit <- lift $ lookupCommit cid
-          if p commit
-            then return $ Just commit
-            else
-              case commitParents commit of
-                [] -> return Nothing
-                (first : _) -> go first
-
 findCommitByDate :: WithFactory n r
-                 => Project -> RefTarget r -> UTCTime -> IO (Maybe (Commit r))
+                 => Project -> RefTarget r -> UTCTime -> Repo (Maybe (Commit r))
 findCommitByDate proj head date = findCommit proj head p
   where p commit = zonedTimeToUTC (signatureWhen committer) <= date
           where committer = commitCommitter commit
 
 snapshotByDate :: WithFactory n r
-               => Snapshot r -> UTCTime -> IO (PartialSnapshot r)
+               => Snapshot r -> UTCTime -> Repo (PartialSnapshot r)
 snapshotByDate heads date =
   forM (unSnapshot heads) $ \(p, head) -> do
     commit <- findCommitByDate p head date
@@ -283,10 +202,10 @@ getSnapshots snapshotsDir =
   filterM (doesFileExist . combine snapshotsDir)
     =<< getDirectoryContents snapshotsDir
 
-readManifest_ :: WithFactory n r => FilePath -> IO (Element, Snapshot r)
+readManifest_ :: WithFactory n r => FilePath -> Repo (Element, Snapshot r)
 readManifest_ rootDir = do
-  mustFile manifestPath
-  doc <- parseXMLDoc <$> readFile manifestPath
+  io $ mustFile manifestPath
+  doc <- io $ parseXMLDoc <$> readFile manifestPath
   let maybeManifest = findElement (byName "manifest") =<< doc
 
   let manifest = fromJust maybeManifest
@@ -342,7 +261,7 @@ readManifest_ rootDir = do
                 remote = Text.pack $ must $ findAttr (byName "remote") elem <|> defRemote
                 rev = Text.pack $ must $ findAttr (byName "revision") elem <|> defRev
 
-readManifest :: WithFactory n r => FilePath -> IO (Snapshot r)
+readManifest :: WithFactory n r => FilePath -> Repo (Snapshot r)
 readManifest = fmap snd . readManifest_
 
 snapshotManifest :: IsOid (Oid r) => Snapshot r -> Element -> Element
@@ -383,7 +302,7 @@ isValidSnapshotName name = not $ name =~ regexp
         regexp = [r|^\.|\.\.|[\/:~^[:cntrl:][:space:]]|]
 
 withFactory :: Gitty n r
-            => RepoFactory n r
+            => GitFactory n r
             -> (WithFactory n r => a) -> a
 withFactory factory x = let ?factory = factory in x
 
@@ -485,16 +404,15 @@ checkoutHandler = do
     rootDir <- asks repoRootDir
     stateDir <- asks repoStateDir
     snapshotsDir <- asks repoSnapshotsDir
+    manifest <- readManifest rootDir
 
-    liftIO $ do
-      manifest <- readManifest rootDir
-      snapshots <- getSnapshots snapshotsDir
+    snapshots <- io $ getSnapshots snapshotsDir
 
-      case parseArgs args options snapshots of
-        Left date ->
-          handleDate manifest date
-        Right snapshot ->
-          handleSnapshot stateDir manifest snapshot
+    case parseArgs args options snapshots of
+      Left date ->
+        handleDate manifest date
+      Right snapshot ->
+        handleSnapshot stateDir manifest snapshot
 
   where parseArgs args options snapshots
           | forceDate options = Left snapshotOrDate
@@ -502,16 +420,16 @@ checkoutHandler = do
           | otherwise = Left snapshotOrDate
           where snapshotOrDate = unwords args
 
-        handleSnapshot snapshotsDir manifest snapshot = liftIO $
+        handleSnapshot snapshotsDir manifest snapshot =
               tryCheckoutSnapshot =<< readSnapshotByName snapshotsDir snapshot projects
           where projects = snapshotProjects manifest
 
-        handleDate manifest date = liftIO $ do
-          partialSnapshot <- snapshotByDate manifest =<< mustParseDate date
+        handleDate manifest date = do
+          partialSnapshot <- snapshotByDate manifest =<< io (mustParseDate date)
           forM_ partialSnapshot $ \(Project{projectName}, ref) ->
             when (isNothing ref) $
-              warn $ "couldn't find a commit matching the date in "
-                       ++ Text.unpack projectName
+              io $ warn $ "couldn't find a commit matching the date in "
+                            ++ Text.unpack projectName
 
           tryCheckoutSnapshot (toFullSnapshot partialSnapshot)
 
@@ -532,23 +450,22 @@ saveHandler = do
       runRepo $ do
         rootDir <- asks repoRootDir
         snapshotsDir <- asks repoSnapshotsDir
+        projects <- snapshotProjects <$> readManifest rootDir
 
-        liftIO $ do
-          projects <- snapshotProjects <$> readManifest rootDir
-          snapshots <- getSnapshots snapshotsDir
+        snapshots <- io $ getSnapshots snapshotsDir
 
-          unless (isValidSnapshotName name) $
-            error $ "invalid snapshot name '" ++ name ++ "'"
+        unless (isValidSnapshotName name) $
+          error $ "invalid snapshot name '" ++ name ++ "'"
 
-          when (name `elem` snapshots && not (overwriteSnapshot options)) $
-            error $ "snapshot '" ++ name ++ "' already exists"
+        when (name `elem` snapshots && not (overwriteSnapshot options)) $
+          error $ "snapshot '" ++ name ++ "' already exists"
 
-          heads <- getHeadsSnapshot projects >>= \hs ->
-            if resolveRefNames options
-              then resolveSnapshot hs
-              else return hs
+        heads <- getHeadsSnapshot projects >>= \hs ->
+          if resolveRefNames options
+            then resolveSnapshot hs
+            else return hs
 
-          saveSnapshotByName snapshotsDir name heads
+        io $ saveSnapshotByName snapshotsDir name heads
     _ ->
       -- TODO: would be helpful to be able to show help here
       error "bad arguments"
@@ -584,11 +501,10 @@ showHandler = do
   runRepo $ do
     rootDir <- asks repoRootDir
     snapshotsDir <- asks repoSnapshotsDir
+    projects <- snapshotProjects <$> readManifest rootDir
+    snapshot <- readSnapshotByName snapshotsDir name projects
 
-    liftIO $ do
-      projects <- snapshotProjects <$> readManifest rootDir
-      snapshot <- readSnapshotByName snapshotsDir name projects
-      Text.putStrLn $ renderSnapshot snapshot
+    io $ Text.putStrLn $ renderSnapshot snapshot
 
 exportCmd :: WithFactory n r => Command Options
 exportCmd = defCmd { cmdName = "export"
@@ -604,12 +520,10 @@ exportHandler = do
   runRepo $ do
     rootDir <- asks repoRootDir
     snapshotsDir <- asks repoSnapshotsDir
+    (xml, manifest) <- readManifest_ rootDir
+    snapshot <- readSnapshotByName snapshotsDir name (snapshotProjects manifest)
 
-    liftIO $ do
-      (xml, manifest) <- readManifest_ rootDir
-
-      snapshot <- readSnapshotByName snapshotsDir name (snapshotProjects manifest)
-      putStrLn $ showTopElement (snapshotManifest snapshot xml)
+    io $ putStrLn $ showTopElement (snapshotManifest snapshot xml)
 
 main :: IO ()
 main = withFactory lgFactory (appMainWithOptions app)
