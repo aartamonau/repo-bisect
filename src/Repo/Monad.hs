@@ -6,12 +6,17 @@ module Repo.Monad
        , Repo
        ) where
 
+import Control.Applicative ((<$>))
+import Control.Exception (evaluate, finally)
 import Control.Monad (when)
 import Control.Monad.Reader (ReaderT, MonadReader, runReaderT)
 import Control.Monad.Trans (MonadIO)
 
+import Data.Maybe (fromMaybe)
+
 import System.Directory (getCurrentDirectory, canonicalizePath,
                          doesDirectoryExist)
+import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 import System.FilePath (combine, takeDirectory)
 
 import Repo.Utils (mustDir, io)
@@ -35,7 +40,7 @@ runRepo r = do
                       , repoSnapshotsDir = snapshots
                       }
 
-  io $ runReaderT (unRepo r) info
+  io $ withLock state $ runReaderT (unRepo r) info
 
   where findRootDir :: IO FilePath
         findRootDir = go =<< canonicalizePath =<< getCurrentDirectory
@@ -63,3 +68,10 @@ runRepo r = do
           return snapshotsDir
 
           where snapshotsDir = (combine stateDir "snapshots")
+
+        withLock stateDir f = do
+          lock <- evaluate =<< extractLock <$> tryLockFile lockPath Exclusive
+          f `finally` unlockFile lock
+          where lockPath = combine stateDir "lock"
+                extractLock =
+                  fromMaybe (error $ "could not acquire file lock at " ++ lockPath)
