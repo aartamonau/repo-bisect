@@ -9,27 +9,19 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE Rank2Types #-}
 
-import Control.Arrow (second)
 import Control.Applicative ((<$>))
-import Control.Exception (onException)
-import Control.Monad (forM, forM_, zipWithM_, when, unless, filterM)
+import Control.Monad (forM_, when, unless)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (asks)
 
 import Data.Default (Default(def))
-import Data.List (find)
-import Data.Maybe (fromMaybe, fromJust, isJust, isNothing)
-import Data.String (fromString)
+import Data.Maybe (fromMaybe, isNothing)
 
-import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 
-import Data.Time (UTCTime, zonedTimeToUTC)
+import Data.Time (UTCTime)
 import Data.Time.Git (io_approxidate, posixToUTC)
-
-import System.Directory (doesFileExist, getDirectoryContents, removeFile)
-import System.FilePath (combine)
 
 import System.IO (stderr, hPutStrLn)
 
@@ -38,14 +30,7 @@ import Text.Regex.Posix ((=~))
 
 import Text.XML.Light (showTopElement)
 
-import Git (MonadGit,
-            Commit(commitCommitter),
-            Signature(signatureWhen),
-            RefTarget(RefObj), Oid, IsOid,
-            commitRefTarget)
 import Git.Libgit2 (lgFactory)
-
-import Shelly (cd, run_, shelly, silently)
 
 import System.Console.GetOpt (OptDescr(Option), ArgDescr(NoArg))
 import UI.Command (Application(appName, appVersion, appAuthors, appProject,
@@ -56,120 +41,20 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
                    Command(cmdName, cmdHandler, cmdShortDesc, cmdCategory),
                    appMainWithOptions, defCmd, appArgs, appConfig)
 
-import Repo (Project(Project, projectName, projectPath),
-             Snapshot(Snapshot, unSnapshot),
-             Repo, runRepo, repoStateDir, repoSnapshotsDir,
-             Project, getProjectHead, findCommit, withProject,
+import Repo (Project(Project, projectName),
+             runRepo, repoStateDir, repoSnapshotsDir,
+             Project,
              WithFactory, Gitty, GitFactory,
-             parseRef, resolveRef, renderRef,
-             readManifest, readManifest_, snapshotManifest)
-import Repo.Utils (io, mustFile)
+             readManifest, readManifest_, snapshotManifest,
+             getSnapshots, snapshotProjects, renderSnapshot,
+             tryCheckoutSnapshot, snapshotByDate, toFullSnapshot,
+             readSnapshotByName, getHeadsSnapshot, resolveSnapshot,
+             saveSnapshotByName, removeSnapshotByName)
+import Repo.Utils (io)
 
 -- TODO: something better than this
 warn :: String -> IO ()
 warn = hPutStrLn stderr . ("Warning: " ++)
-
-getHeadsSnapshot :: WithFactory n r => [Project] -> Repo (Snapshot r)
-getHeadsSnapshot projects =
-  Snapshot . zip projects <$> mapM getProjectHead projects
-
-resolveSnapshot :: WithFactory n r => Snapshot r -> Repo (Snapshot r)
-resolveSnapshot = fmap Snapshot . mapM f . unSnapshot
-  where f (p, ref) = fmap (p,) (withProject p $ RefObj <$> resolveRef ref)
-
-type PartialSnapshot r = [(Project, Maybe (RefTarget r))]
-
-renderSnapshot :: IsOid (Oid r) => Snapshot r -> Text
-renderSnapshot (Snapshot ps) = Text.intercalate "\n" (map renderPair ps)
-  where width = maximum $ map (Text.length . projectName . fst) ps
-        renderPair (proj, ref) = Text.concat [projectName proj,
-                                              Text.replicate (width - n) " ",
-                                              " ",
-                                              renderRef ref]
-          where n = Text.length $ projectName proj
-
-toFullSnapshot :: PartialSnapshot r -> Snapshot r
-toFullSnapshot = Snapshot . map (second fromJust) . filter (isJust . snd)
-
-snapshotProjects :: Snapshot r -> [Project]
-snapshotProjects = fst . unzip . unSnapshot
-
-saveSnapshotFile :: IsOid (Oid r) => FilePath -> Snapshot r -> IO ()
-saveSnapshotFile path projects =
-  Text.writeFile path $ Text.concat (map oneLine $ unSnapshot projects)
-
-  where oneLine (Project {projectName}, ref) =
-          Text.concat [renderRef ref, " ", projectName, "\n"]
-
-readSnapshotFile :: WithFactory n r => FilePath -> [Project] -> Repo (Snapshot r)
-readSnapshotFile path projects = do
-  io $ mustFile path
-  content <- io $ Text.readFile path
-
-  fmap Snapshot $ forM (map decodeLine $ Text.lines content) $ \(ref, name) -> do
-    let proj = findProject name
-    ref' <- withProject proj $ parseRef ref
-    return (proj, ref')
-
-  where decodeLine s
-          | (ref, rest) <- Text.breakOn " " s = (ref, Text.tail rest)
-          | otherwise = error $ "got invalid line in snapshot file "
-                                  ++ path ++ " : " ++ Text.unpack s
-
-        findProject needle
-          | Just proj <- find p projects = proj
-          | otherwise = error $ "got invalid project name in snapshot file "
-                                  ++ path ++ " : " ++ Text.unpack needle
-          where p proj = projectName proj == needle
-
-readSnapshotByName :: WithFactory n r
-                   => FilePath -> String -> [Project] -> Repo (Snapshot r)
-readSnapshotByName snapshotsDir = readSnapshotFile . combine snapshotsDir
-
-saveSnapshotByName :: IsOid (Oid r) => FilePath -> String -> Snapshot r -> IO ()
-saveSnapshotByName snapshotsDir = saveSnapshotFile . combine snapshotsDir
-
-removeSnapshotByName :: FilePath -> String -> IO ()
-removeSnapshotByName snapshotsDir = removeFile . combine snapshotsDir
-
-checkoutRef :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
-checkoutRef (Project {projectPath}) ref =
-  shelly $ silently $ do
-    cd $ fromString projectPath
-    run_ "git" ["checkout", branchify (renderRef ref)]
-
-  where branchify s | Just branch <- Text.stripPrefix "refs/heads/" s = branch
-                    | otherwise = s
-
-checkoutSnapshot :: IsOid (Oid r) => Snapshot r -> IO ()
-checkoutSnapshot = uncurry (zipWithM_ checkoutRef) . unzip . unSnapshot
-
-tryCheckoutSnapshot :: WithFactory n r => Snapshot r -> Repo ()
-tryCheckoutSnapshot snapshot = do
-  heads <- getHeadsSnapshot (snapshotProjects snapshot)
-  io $ checkoutSnapshot snapshot `onException` tryRecover heads
-
-  where tryRecover heads = do
-          warn "checkout failed; trying to roll back to previous state"
-          checkoutSnapshot heads
-
-findCommitByDate :: WithFactory n r
-                 => Project -> RefTarget r -> UTCTime -> Repo (Maybe (Commit r))
-findCommitByDate proj head date = findCommit proj head p
-  where p commit = zonedTimeToUTC (signatureWhen committer) <= date
-          where committer = commitCommitter commit
-
-snapshotByDate :: WithFactory n r
-               => Snapshot r -> UTCTime -> Repo (PartialSnapshot r)
-snapshotByDate heads date =
-  forM (unSnapshot heads) $ \(p, head) -> do
-    commit <- findCommitByDate p head date
-    return (p, commitRefTarget <$> commit)
-
-getSnapshots :: FilePath -> IO [String]
-getSnapshots snapshotsDir =
-  filterM (doesFileExist . combine snapshotsDir)
-    =<< getDirectoryContents snapshotsDir
 
 mustParseDate :: String -> IO UTCTime
 mustParseDate date = do
