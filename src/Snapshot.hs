@@ -11,7 +11,7 @@
 
 import Control.Arrow (second)
 import Control.Applicative ((<$>))
-import Control.Exception (catch, onException)
+import Control.Exception (onException)
 import Control.Monad (forM, forM_, zipWithM_, when, unless, filterM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (asks)
@@ -41,9 +41,7 @@ import Text.XML.Light (showTopElement)
 import Git (MonadGit,
             Commit(commitCommitter),
             Signature(signatureWhen),
-            RefTarget(RefObj), Oid,
-            IsOid,
-            GitException,
+            RefTarget(RefObj), Oid, IsOid,
             commitRefTarget)
 import Git.Libgit2 (lgFactory)
 
@@ -57,8 +55,6 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
                    App,
                    Command(cmdName, cmdHandler, cmdShortDesc, cmdCategory),
                    appMainWithOptions, defCmd, appArgs, appConfig)
-
-import Control.Monad.Trans.Control (MonadBaseControl, control)
 
 import Repo (Project(Project, projectName, projectPath),
              Snapshot(Snapshot, unSnapshot),
@@ -77,16 +73,9 @@ getHeadsSnapshot :: WithFactory n r => [Project] -> Repo (Snapshot r)
 getHeadsSnapshot projects =
   Snapshot . zip projects <$> mapM getProjectHead projects
 
-onGitException :: MonadBaseControl IO m => m a -> m a -> m a
-onGitException body what =
-  control $ \run -> run body `catch` \ (_ :: GitException) -> run what
-
 resolveSnapshot :: WithFactory n r => Snapshot r -> Repo (Snapshot r)
 resolveSnapshot = fmap Snapshot . mapM f . unSnapshot
   where f (p, ref) = fmap (p,) (withProject p $ RefObj <$> resolveRef ref)
-
-headsPath :: FilePath -> FilePath
-headsPath stateDir = combine stateDir "HEADS"
 
 type PartialSnapshot r = [(Project, Maybe (RefTarget r))]
 
