@@ -7,7 +7,6 @@
 
 import Control.Applicative ((<$>))
 import Control.Monad (forM_, when, unless)
-import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (asks)
 
 import Data.Default (Default(def))
@@ -125,7 +124,7 @@ argsExistingSnapshot = do
       runRepo $ do
         snapshotsDir <- asks repoSnapshotsDir
 
-        liftIO $ do
+        io $ do
           snapshots <- getSnapshots snapshotsDir
 
           unless (name `elem` snapshots) $
@@ -138,7 +137,7 @@ argsExistingSnapshot = do
 
 listCmd :: Command Options
 listCmd = defCmd { cmdName = "list"
-                 , cmdHandler = liftIO listHandler
+                 , cmdHandler = io listHandler
                  , cmdCategory = mainCategory
                  , cmdShortDesc = "List known snapshot"
                  }
@@ -147,8 +146,7 @@ listHandler :: IO ()
 listHandler = runRepo $ do
   snapshotsDir <- asks repoSnapshotsDir
 
-  liftIO $
-    mapM_ putStrLn =<< getSnapshots snapshotsDir
+  io $ mapM_ putStrLn =<< getSnapshots snapshotsDir
 
 checkoutCmd :: WithFactory n r => Command Options
 checkoutCmd = defCmd { cmdName = "checkout"
@@ -243,8 +241,7 @@ deleteHandler = do
   runRepo $ do
     snapshotsDir <- asks repoStateDir
 
-    liftIO $
-      removeSnapshotByName snapshotsDir name
+    io $ removeSnapshotByName snapshotsDir name
 
 showCmd :: WithFactory n r => Command Options
 showCmd = defCmd { cmdName = "show"
