@@ -44,7 +44,7 @@ readManifest = snd <$> readManifest_
 
 doReadManifest :: WithFactory n r => FilePath -> Repo (Element, Snapshot r)
 doReadManifest rootDir = do
-  io $ mustFile manifestPath
+  mustFile manifestPath
   doc <- io $ parseXMLDoc <$> readFile manifestPath
   let maybeManifest = findElement (byName "manifest") =<< doc
 

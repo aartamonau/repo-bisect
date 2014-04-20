@@ -89,7 +89,7 @@ saveSnapshotFile path projects =
 
 readSnapshotFile :: WithFactory n r => FilePath -> [Project] -> Repo (Snapshot r)
 readSnapshotFile path projects = do
-  io $ mustFile path
+  mustFile path
   content <- io $ Text.readFile path
 
   fmap Snapshot $ forM (map decodeLine $ Text.lines content) $ \(ref, name) -> do
@@ -117,7 +117,6 @@ saveSnapshotByName snapshotsDir = saveSnapshotFile . combine snapshotsDir
 
 removeSnapshotByName :: FilePath -> String -> IO ()
 removeSnapshotByName snapshotsDir = removeFile . combine snapshotsDir
-
 
 checkoutRef :: IsOid (Oid r) => Project -> RefTarget r -> IO ()
 checkoutRef (Project {projectPath}) ref =

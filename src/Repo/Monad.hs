@@ -32,8 +32,8 @@ newtype Repo a = Repo { unRepo :: ReaderT RepoInfo IO a }
 runRepo :: MonadIO m => Repo a -> m a
 runRepo r = do
   root <- io findRootDir
-  state <- io $ mustStateDir root
-  snapshots <- io $ mustSnapshotsDir state
+  state <- mustStateDir root
+  snapshots <- mustSnapshotsDir state
 
   let info = RepoInfo { repoRootDir = root
                       , repoStateDir = state
@@ -55,14 +55,12 @@ runRepo r = do
                         error "could not find .repo directory"
                       go parentDir
 
-        mustStateDir :: FilePath -> IO FilePath
         mustStateDir rootDir = do
           mustDir stateDir
           return stateDir
 
           where stateDir = combine rootDir ".repo-utils"
 
-        mustSnapshotsDir :: FilePath -> IO FilePath
         mustSnapshotsDir stateDir = do
           mustDir snapshotsDir
           return snapshotsDir

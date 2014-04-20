@@ -9,8 +9,8 @@ import Control.Monad.Trans (MonadIO, liftIO)
 
 import System.Directory (doesDirectoryExist, doesFileExist, createDirectory)
 
-mustDir :: FilePath -> IO ()
-mustDir dir = do
+mustDir :: MonadIO m => FilePath -> m ()
+mustDir dir = io $ do
   exists <- doesDirectoryExist dir
   if exists
     then do
@@ -19,8 +19,8 @@ mustDir dir = do
         error $ "failed to create state directory (" ++ dir ++ "): file exists"
     else createDirectory dir
 
-mustFile :: FilePath -> IO ()
-mustFile path = do
+mustFile :: MonadIO m => FilePath -> m ()
+mustFile path = io $ do
   exists <- doesFileExist path
   unless exists $
     error $ "could not find " ++ path
