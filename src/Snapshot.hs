@@ -42,10 +42,10 @@ import Text.XML.Light (showTopElement)
 import Git (MonadGit,
             Commit(commitCommitter),
             Signature(signatureWhen),
-            RefTarget(RefObj, RefSymbolic), Oid, CommitOid,
+            RefTarget(RefObj), Oid, CommitOid,
             IsOid,
             GitException,
-            renderOid, commitRefTarget)
+            commitRefTarget)
 import Git.Libgit2 (lgFactory)
 
 import Shelly (cd, run_, shelly, silently)
@@ -66,7 +66,7 @@ import Repo (Project(Project, projectName, projectPath),
              Repo, runRepo, repoStateDir, repoSnapshotsDir,
              Project, getProjectHead, findCommit, withProject,
              WithFactory, Gitty, GitFactory,
-             parseRef, resolveRef,
+             parseRef, resolveRef, renderRef,
              readManifest, readManifest_, snapshotManifest)
 import Repo.Utils (io, mustFile)
 
@@ -77,10 +77,6 @@ warn = hPutStrLn stderr . ("Warning: " ++)
 getHeadsSnapshot :: WithFactory n r => [Project] -> Repo (Snapshot r)
 getHeadsSnapshot projects =
   Snapshot . zip projects <$> mapM getProjectHead projects
-
-renderRef :: (IsOid (Oid r)) => RefTarget r -> Text
-renderRef (RefObj obj) = renderOid obj
-renderRef (RefSymbolic sym) = sym
 
 onGitException :: MonadBaseControl IO m => m a -> m a -> m a
 onGitException body what =
