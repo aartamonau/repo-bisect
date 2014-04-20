@@ -20,7 +20,6 @@ import Data.Default (Default(def))
 import Data.List (find)
 import Data.Maybe (fromMaybe, fromJust, isJust, isNothing)
 import Data.String (fromString)
-import Data.Tagged (Tagged(Tagged))
 
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -42,7 +41,7 @@ import Text.XML.Light (showTopElement)
 import Git (MonadGit,
             Commit(commitCommitter),
             Signature(signatureWhen),
-            RefTarget(RefObj), Oid, CommitOid,
+            RefTarget(RefObj), Oid,
             IsOid,
             GitException,
             commitRefTarget)
@@ -164,9 +163,6 @@ tryCheckoutSnapshot snapshot = do
   where tryRecover heads = do
           warn "checkout failed; trying to roll back to previous state"
           checkoutSnapshot heads
-
-oidToCommitOid :: Oid r -> CommitOid r
-oidToCommitOid = Tagged
 
 findCommitByDate :: WithFactory n r
                  => Project -> RefTarget r -> UTCTime -> Repo (Maybe (Commit r))
