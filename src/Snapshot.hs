@@ -9,16 +9,15 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE Rank2Types #-}
 
-import Control.Arrow ((***), second)
-import Control.Applicative ((<$>), (<|>))
+import Control.Arrow (second)
+import Control.Applicative ((<$>))
 import Control.Exception (catch, onException)
 import Control.Monad (forM, forM_, zipWithM_, when, unless, filterM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (asks)
 
 import Data.Default (Default(def))
-import Data.Generics (everywhere, mkT)
-import Data.List (find, sort)
+import Data.List (find)
 import Data.Maybe (fromMaybe, fromJust, isJust, isNothing)
 import Data.String (fromString)
 import Data.Tagged (Tagged(Tagged))
@@ -38,13 +37,7 @@ import System.IO (stderr, hPutStrLn)
 import Text.RawString.QQ (r)
 import Text.Regex.Posix ((=~))
 
-import Text.XML.Light (QName(QName),
-                       Element(elName, elAttribs, elContent),
-                       Content(Elem),
-                       Attr(Attr, attrKey, attrVal),
-                       parseXMLDoc, findElement, blank_element,
-                       findChild, findChildren, findAttr,
-                       showTopElement)
+import Text.XML.Light (showTopElement)
 
 import Git (MonadGit,
             Commit(commitCommitter),
@@ -70,21 +63,16 @@ import Control.Monad.Trans.Control (MonadBaseControl, control)
 
 import Repo (Project(Project, projectName, projectPath),
              Snapshot(Snapshot, unSnapshot),
-             Repo, runRepo, repoRootDir, repoStateDir, repoSnapshotsDir,
+             Repo, runRepo, repoStateDir, repoSnapshotsDir,
              Project, getProjectHead, findCommit, withProject,
              WithFactory, Gitty, GitFactory,
-             parseRef, resolveRef, isSHA)
-import Repo.Utils (io)
+             parseRef, resolveRef,
+             readManifest, readManifest_, snapshotManifest)
+import Repo.Utils (io, mustFile)
 
 -- TODO: something better than this
 warn :: String -> IO ()
 warn = hPutStrLn stderr . ("Warning: " ++)
-
-mustFile :: FilePath -> IO ()
-mustFile path = do
-  exists <- doesFileExist path
-  unless exists $
-    error $ "could not find " ++ path
 
 getHeadsSnapshot :: WithFactory n r => [Project] -> Repo (Snapshot r)
 getHeadsSnapshot projects =
@@ -202,95 +190,6 @@ getSnapshots snapshotsDir =
   filterM (doesFileExist . combine snapshotsDir)
     =<< getDirectoryContents snapshotsDir
 
-readManifest_ :: WithFactory n r => FilePath -> Repo (Element, Snapshot r)
-readManifest_ rootDir = do
-  io $ mustFile manifestPath
-  doc <- io $ parseXMLDoc <$> readFile manifestPath
-  let maybeManifest = findElement (byName "manifest") =<< doc
-
-  let manifest = fromJust maybeManifest
-  let remotes = map parseRemote $ findChildren (byName "remote") manifest
-  let projects = findChildren (byName "project") manifest
-  let def = parseDefault remotes $ findChild (byName "default") manifest
-
-  when (isNothing maybeManifest || null remotes || null projects)
-    errorBadManifest
-
-  snapshot <- Snapshot <$> mapM (parseProject def) projects
-  return (fromJust doc, snapshot)
-
-  where manifestPath = combine rootDir ".repo/manifest.xml"
-
-        byName name = QName name Nothing Nothing
-
-        errorBadManifest = error $ "invalid manifest file " ++ manifestPath
-
-        must = fromMaybe errorBadManifest
-
-        mustAttr attr elem = must $ findAttr attr elem
-
-        parseRemote elem = (name, fromMaybe name alias)
-          where name = mustAttr (byName "name") elem
-                alias = findAttr (byName "alias") elem
-
-        findRemote remotes name =
-          fromMaybe errorBadManifest $ lookup name remotes
-
-        parseDefault remotes = maybe (Nothing, Nothing) go
-          where go elem = (remote, revision)
-                  where remote = findRemote remotes <$>
-                                   findAttr (byName "remote") elem
-                        revision = findAttr (byName "revision") elem
-
-        parseProject (defRemote, defRev) elem =
-          withProject project $ do
-            revIsSHA <- isSHA rev
-            let ref | revIsSHA = rev
-                    | "refs/tags/" `Text.isPrefixOf` rev = rev
-                    | Just branch <- Text.stripPrefix "refs/heads" rev =
-                      Text.concat ["refs/remotes/", remote, "/", branch]
-                    | otherwise = Text.concat ["refs/remotes/", remote, "/", rev]
-            parsedRef <- parseRef ref
-            return (project, parsedRef)
-          where name = mustAttr (byName "name") elem
-                path = must $ findAttr (byName "path") elem <|> Just name
-                absPath = combine rootDir path
-                project = Project { projectName = Text.pack name,
-                                    projectPath = absPath }
-
-                remote = Text.pack $ must $ findAttr (byName "remote") elem <|> defRemote
-                rev = Text.pack $ must $ findAttr (byName "revision") elem <|> defRev
-
-readManifest :: WithFactory n r => FilePath -> Repo (Snapshot r)
-readManifest = fmap snd . readManifest_
-
-snapshotManifest :: IsOid (Oid r) => Snapshot r -> Element -> Element
-snapshotManifest s = everywhere (mkT go)
-  where projects = map (Text.unpack . projectName *** renderRef) (unSnapshot s)
-
-        filterBlank x = x { elContent = content }
-          where content = filter (not . isBlankElem) (elContent x)
-
-                isBlankElem (Elem el) | QName "" _ _ <- elName el = True
-                                      | otherwise = False
-                isBlankElem _ = False
-
-        go :: Element -> Element
-        go x | QName "project" _ _ <- elName x = goProject $ filterBlank x
-             | otherwise = filterBlank x
-
-        goProject x | Just ref <- maybeRef = x {elAttribs = sort $ rev ref : attrs'}
-                    | otherwise = blank_element
-          where mkName name = QName name Nothing Nothing
-                maybeName = findAttr (mkName "name") x
-                maybeRef = maybeName >>= \n -> lookup n projects
-
-                attrs' = filter p (elAttribs x)
-                  where p x = mkName "revision" /= attrKey x
-                rev ref = Attr { attrKey = mkName "revision"
-                               , attrVal = Text.unpack ref
-                               }
-
 mustParseDate :: String -> IO UTCTime
 mustParseDate date = do
   parsed <- fmap posixToUTC <$> io_approxidate date
@@ -401,10 +300,9 @@ checkoutHandler = do
   args <- appArgs
   options <- appConfig
   runRepo $ do
-    rootDir <- asks repoRootDir
     stateDir <- asks repoStateDir
     snapshotsDir <- asks repoSnapshotsDir
-    manifest <- readManifest rootDir
+    manifest <- readManifest
 
     snapshots <- io $ getSnapshots snapshotsDir
 
@@ -448,9 +346,8 @@ saveHandler = do
   case args of
     [name] ->
       runRepo $ do
-        rootDir <- asks repoRootDir
         snapshotsDir <- asks repoSnapshotsDir
-        projects <- snapshotProjects <$> readManifest rootDir
+        projects <- snapshotProjects <$> readManifest
 
         snapshots <- io $ getSnapshots snapshotsDir
 
@@ -499,9 +396,8 @@ showHandler = do
   name <- argsExistingSnapshot
 
   runRepo $ do
-    rootDir <- asks repoRootDir
     snapshotsDir <- asks repoSnapshotsDir
-    projects <- snapshotProjects <$> readManifest rootDir
+    projects <- snapshotProjects <$> readManifest
     snapshot <- readSnapshotByName snapshotsDir name projects
 
     io $ Text.putStrLn $ renderSnapshot snapshot
@@ -518,9 +414,8 @@ exportHandler = do
   name <- argsExistingSnapshot
 
   runRepo $ do
-    rootDir <- asks repoRootDir
     snapshotsDir <- asks repoSnapshotsDir
-    (xml, manifest) <- readManifest_ rootDir
+    (xml, manifest) <- readManifest_
     snapshot <- readSnapshotByName snapshotsDir name (snapshotProjects manifest)
 
     io $ putStrLn $ showTopElement (snapshotManifest snapshot xml)
