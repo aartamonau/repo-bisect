@@ -1,4 +1,7 @@
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Repo.Monad
        ( RepoInfo(repoRootDir, repoStateDir, repoSnapshotsDir)
@@ -14,11 +17,14 @@ import Control.Monad.Trans (MonadIO)
 
 import Data.Maybe (fromMaybe)
 
+import Git.Libgit2 (lgFactory)
+
 import System.Directory (getCurrentDirectory, canonicalizePath,
                          doesDirectoryExist)
 import System.FileLock (SharedExclusive(Exclusive), tryLockFile, unlockFile)
 import System.FilePath (combine, takeDirectory)
 
+import Repo.Git (WithFactory, withFactory)
 import Repo.Utils (mustDir, io)
 
 data RepoInfo = RepoInfo { repoRootDir :: FilePath
@@ -29,8 +35,8 @@ data RepoInfo = RepoInfo { repoRootDir :: FilePath
 newtype Repo a = Repo { unRepo :: ReaderT RepoInfo IO a }
                deriving (Monad, MonadReader RepoInfo, MonadIO, Functor)
 
-runRepo :: MonadIO m => Repo a -> m a
-runRepo r = do
+runRepo :: MonadIO m => (forall n r . WithFactory n r => Repo a) -> m a
+runRepo r = withFactory lgFactory $ do
   root <- io findRootDir
   state <- mustStateDir root
   snapshots <- mustSnapshotsDir state

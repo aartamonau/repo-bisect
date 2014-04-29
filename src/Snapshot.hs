@@ -25,8 +25,6 @@ import Text.Regex.Posix ((=~))
 
 import Text.XML.Light (showTopElement)
 
-import Git.Libgit2 (lgFactory)
-
 import System.Console.GetOpt (OptDescr(Option), ArgDescr(NoArg))
 import UI.Command (Application(appName, appVersion, appAuthors, appProject,
                                appCmds, appShortDesc, appLongDesc,
@@ -39,7 +37,6 @@ import UI.Command (Application(appName, appVersion, appAuthors, appProject,
 import Repo (Project(Project, projectName),
              runRepo, repoStateDir, repoSnapshotsDir,
              Project,
-             WithFactory, Gitty, GitFactory,
              readManifest, readManifest_, snapshotManifest,
              getSnapshots, snapshotProjects, renderSnapshot,
              tryCheckoutSnapshot, snapshotByDate, toFullSnapshot,
@@ -61,11 +58,6 @@ isValidSnapshotName name = not $ name =~ regexp
   where regexp :: String
         regexp = [r|^\.|\.\.|[\/:~^[:cntrl:][:space:]]|]
 
-withFactory :: Gitty n r
-            => GitFactory n r
-            -> (WithFactory n r => a) -> a
-withFactory factory x = let ?factory = factory in x
-
 mainCategory :: String
 mainCategory = "Working with snapshots"
 
@@ -80,7 +72,7 @@ instance Default Options where
                 , resolveRefNames = False
                 }
 
-app :: WithFactory n r => Application (Options -> Options) Options
+app :: Application (Options -> Options) Options
 app = def' { appName = "repo-snapshot"
            , appVersion = "0.1"
            , appAuthors = ["Aliaksey Artamonau <aliaksiej.artamonau@gmail.com>"]
@@ -148,14 +140,14 @@ listHandler = runRepo $ do
 
   io $ mapM_ putStrLn =<< getSnapshots snapshotsDir
 
-checkoutCmd :: WithFactory n r => Command Options
+checkoutCmd :: Command Options
 checkoutCmd = defCmd { cmdName = "checkout"
                      , cmdHandler = checkoutHandler
                      , cmdShortDesc = "Checkout snapshot by name or date"
                      , cmdCategory = mainCategory
                      }
 
-checkoutHandler :: WithFactory n r => App Options ()
+checkoutHandler :: App Options ()
 checkoutHandler = do
   args <- appArgs
   options <- appConfig
@@ -191,14 +183,14 @@ checkoutHandler = do
 
           tryCheckoutSnapshot (toFullSnapshot partialSnapshot)
 
-saveCmd :: WithFactory n r => Command Options
+saveCmd :: Command Options
 saveCmd = defCmd { cmdName = "save"
                  , cmdHandler = saveHandler
                  , cmdShortDesc = "save current state of all projects"
                  , cmdCategory = mainCategory
                  }
 
-saveHandler :: WithFactory n r => App Options ()
+saveHandler :: App Options ()
 saveHandler = do
   args <- appArgs
   options <- appConfig
@@ -227,14 +219,14 @@ saveHandler = do
       -- TODO: would be helpful to be able to show help here
       error "bad arguments"
 
-deleteCmd :: WithFactory n r => Command Options
+deleteCmd :: Command Options
 deleteCmd = defCmd { cmdName = "delete"
                    , cmdHandler = deleteHandler
                    , cmdShortDesc = "delete named snapshot"
                    , cmdCategory = mainCategory
                    }
 
-deleteHandler :: WithFactory n r => App Options ()
+deleteHandler :: App Options ()
 deleteHandler = do
   name <- argsExistingSnapshot
 
@@ -243,14 +235,14 @@ deleteHandler = do
 
     io $ removeSnapshotByName snapshotsDir name
 
-showCmd :: WithFactory n r => Command Options
+showCmd :: Command Options
 showCmd = defCmd { cmdName = "show"
                  , cmdHandler = showHandler
                  , cmdShortDesc = "show snapshot"
                  , cmdCategory = mainCategory
                  }
 
-showHandler :: WithFactory n r => App Options ()
+showHandler :: App Options ()
 showHandler = do
   name <- argsExistingSnapshot
 
@@ -261,14 +253,14 @@ showHandler = do
 
     io $ Text.putStrLn $ renderSnapshot snapshot
 
-exportCmd :: WithFactory n r => Command Options
+exportCmd :: Command Options
 exportCmd = defCmd { cmdName = "export"
                    , cmdHandler = exportHandler
                    , cmdShortDesc = "export snapshot as manifest"
                    , cmdCategory = mainCategory
                    }
 
-exportHandler :: WithFactory n r => App Options ()
+exportHandler :: App Options ()
 exportHandler = do
   name <- argsExistingSnapshot
 
@@ -280,4 +272,4 @@ exportHandler = do
     io $ putStrLn $ showTopElement (snapshotManifest snapshot xml)
 
 main :: IO ()
-main = withFactory lgFactory (appMainWithOptions app)
+main = appMainWithOptions app

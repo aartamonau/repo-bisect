@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ImplicitParams #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Repo.Git
@@ -16,6 +17,7 @@ module Repo.Git
        , resolveRef
        , refTree
        , withGitRepo
+       , withFactory
        ) where
 
 import Control.Applicative ((<$>))
@@ -95,3 +97,8 @@ refTree ref = do
 
 withGitRepo :: (WithFactory n r, MonadIO m) => FilePath -> Git n a -> m a
 withGitRepo path a = io $ withRepository ?factory path $ runReaderT a path
+
+withFactory :: Gitty n r
+            => GitFactory n r
+            -> (WithFactory n r => a) -> a
+withFactory factory x = let ?factory = factory in x
